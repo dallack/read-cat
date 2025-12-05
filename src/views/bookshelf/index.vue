@@ -25,6 +25,7 @@ import IconBack from '../../assets/svg/icon-goback-back.svg';
 import IconPlugin from '../../assets/svg/icon-settings-plugins.svg';
 import IconImport from '../../assets/svg/icon-import.svg';
 import IconDelete from '../../assets/svg/icon-delete.svg';
+import IconOpenBook from '../../assets/svg/icon-open-book.svg';
 import { useSettingsStore } from '../../store/settings';
 import CoverImage from '../../assets/cover.jpg';
 import { Book } from '../../store/bookshelf';
@@ -38,7 +39,7 @@ import { TxtParserType } from '../../core/book/txt-parser';
 import { useMessage } from '../../hooks/message';
 import { useDefaultSearch } from '../../hooks/default-search';
 import { storeToRefs } from 'pinia';
-
+import { exportBookToTxt } from '../../core/utils/exportBookToTxt';
 
 const router = useRouter();
 const { options } = useSettingsStore();
@@ -107,12 +108,100 @@ const {
 } = useImportBooks();
 
 const { rules: txtParseRules } = storeToRefs(useTxtParseRuleStore());
+const message = useMessage();
 
 /** 导航至上次阅读章节或最新章节页*/
 const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
   e.stopPropagation();
   goDetailPage(book, to);
 }
+
+const exportTxt = async (book?: Book) => {
+  if (!book?.pid || !book.detailPageUrl) {
+    message.warning('无法获取书籍信息，导出失败');
+    return;
+  }
+  const loading = message.loading('正在检查缓存...');
+  try {
+    const cached = await GLOBAL_DB.store.textContentStore.getByPidAndDetailUrl(
+      book.pid,
+      book.detailPageUrl
+    );
+    loading.close();
+    const cachedCount = cached?.length || 0;
+    if (cachedCount <= 0) {
+      message.warning('当前书籍没有缓存章节，无法导出');
+      return;
+    }
+    const exporting = message.loading('正在导出 TXT...');
+    try {
+      await exportBookToTxt({
+        pid: book.pid,
+        detailUrl: book.detailPageUrl,
+        bookTitle: book.bookname || '未命名书籍',
+        storeName: 'store_text_content',
+        dbName: 'ReadCatDatabase',
+        dbVersion: 11
+      });
+      message.success('导出完成');
+    } catch (e: any) {
+      message.error(e?.message || '导出失败');
+    } finally {
+      exporting.close();
+    }
+  } catch (e: any) {
+    loading.close();
+    message.error(e?.message || '检查缓存失败');
+  }
+};
+
+const exportSelectedTxt = async () => {
+  if (checkedCities.value.length < 1) {
+    message.warning('未选择书本');
+    return;
+  }
+  const loading = message.loading('正在检查缓存...');
+  const success: string[] = [];
+  const failed: string[] = [];
+  try {
+    for (const id of checkedCities.value) {
+      const book = refreshValues.value.find((b: Book) => b.id === id);
+      if (!book?.pid || !book.detailPageUrl) {
+        failed.push(`${book?.bookname || id}：信息缺失`);
+        continue;
+      }
+      const cached = await GLOBAL_DB.store.textContentStore.getByPidAndDetailUrl(
+        book.pid,
+        book.detailPageUrl
+      );
+      const count = cached?.length || 0;
+      if (count <= 0) {
+        failed.push(`${book.bookname || id}：无缓存章节`);
+        continue;
+      }
+      try {
+        await exportBookToTxt({
+          pid: book.pid,
+          detailUrl: book.detailPageUrl,
+          bookTitle: book.bookname || '未命名书籍',
+          storeName: 'store_text_content',
+          dbName: 'ReadCatDatabase',
+          dbVersion: 11
+        });
+        success.push(book.bookname || id);
+      } catch (e: any) {
+        failed.push(`${book.bookname || id}：${e?.message || '导出失败'}`);
+      }
+    }
+  } catch (e: any) {
+    message.error(e?.message || '批量检查失败');
+  } finally {
+    loading.close();
+  }
+  success.length && message.success(`已导出：${success.join('、')}`);
+  failed.length && message.warning(`未导出：${failed.join(';')}`);
+};
+
 </script>
 
 <template>
@@ -131,7 +220,7 @@ const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
         </ElResult> -->
       </div>
       <div class="result" v-else>
-        <div :class="['toolbar', options.enableBlur ? 'app-blur' : '']">
+        <div class="toolbar" :class="[options.enableBlur ? 'app-blur' : '']">
           <div class="left">
             <ElCheckbox v-memo="[checkAll, isIndeterminate]" v-model="checkAll" label="全选"
               :indeterminate="isIndeterminate" @change="handleCheckAllChange" />
@@ -139,6 +228,7 @@ const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
               :page-count="totalPage" :current-page="currentPage" @current-change="currentPageChange" />
           </div>
           <div class="right">
+            <ElButton type="primary" size="small" :icon="IconOpenBook" :disabled="checkedCities.length < 1" @click="exportSelectedTxt">导出TXT</ElButton>
             <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
             <ElButton type="danger" size="small" :icon="IconDelete" @click="removeBookshelf">移出</ElButton>
             <ElInput v-memo="[searchKey]" v-model="searchKey"  placeholder="请输入书名、作者"
