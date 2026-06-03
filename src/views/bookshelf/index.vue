@@ -25,9 +25,10 @@ import IconBack from '../../assets/svg/icon-goback-back.svg';
 import IconPlugin from '../../assets/svg/icon-settings-plugins.svg';
 import IconImport from '../../assets/svg/icon-import.svg';
 import IconDelete from '../../assets/svg/icon-delete.svg';
+import IconDownload from '../../assets/svg/icon-arrow-line-down.svg';
 import { useSettingsStore } from '../../store/settings';
 import CoverImage from '../../assets/cover.jpg';
-import { Book } from '../../store/bookshelf';
+import { Book, useBookshelfStore } from '../../store/bookshelf';
 import { useRouter } from 'vue-router';
 import { useWindowStore } from '../../store/window';
 import { useBookshelfCheckbox } from './hooks/bookshelf-checkbox';
@@ -41,6 +42,7 @@ import { storeToRefs } from 'pinia';
 
 
 const router = useRouter();
+const bookshelf = useBookshelfStore();
 const { options } = useSettingsStore();
 const { pageScrollTop } = useScrollTopStore();
 onMounted(() => {
@@ -112,6 +114,11 @@ const { rules: txtParseRules } = storeToRefs(useTxtParseRuleStore());
 const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
   e.stopPropagation();
   goDetailPage(book, to);
+}
+
+const exportTxt = (e: MouseEvent, book: Book) => {
+  e.stopPropagation();
+  bookshelf.exportTxt(book.id);
 }
 </script>
 
@@ -196,6 +203,8 @@ const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
                       <Text v-memo="[item.latestChapterTitle]" :title="`最新章节 ${item.latestChapterTitle}`" ellipsis max-width="145">{{ item.latestChapterTitle }}</Text>
                     </template>
                   </div>
+                  <ElButton class="export-txt" size="small" circle :icon="IconDownload"
+                    :loading="item.isRunningExport" title="导出TXT" @click="e => exportTxt(e, item)" />
                   <ElCheckbox v-memo="[item.id]" :key="`checkbox-${item.id}`" :value="item.id"
                     @click="(e: MouseEvent) => e.stopPropagation()" />
                 </div>
@@ -719,6 +728,18 @@ const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
             div {
               display: flex;
               align-items: center;
+              flex: 1;
+              min-width: 0;
+              max-width: calc(100% - 52px);
+            }
+
+            .export-txt {
+              flex: 0 0 20px;
+              margin-left: 6px;
+              margin-right: 6px;
+              width: 20px;
+              height: 20px;
+              min-height: 20px;
             }
           }
         }

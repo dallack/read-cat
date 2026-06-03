@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { BookshelfStoreEntity } from '../core/database/database';
+import { BookshelfStoreEntity, TextContentStoreEntity } from '../core/database/database';
 import { useMessage } from '../hooks/message';
 import { chunkArray, errorHandler, newError, replaceInvisibleStr } from '../core/utils';
 import { isNull, isUndefined } from '../core/is';
@@ -7,6 +7,11 @@ import { useSettingsStore } from './settings';
 import { BookSource } from '../core/plugins/defined/booksource';
 import { BookParser } from '../core/book/book-parser';
 import type { BookshelfReadProgress } from '../core/database/store/bookshelf-store';
+import { Core } from '../core';
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { nanoid } from 'nanoid';
 
 export type Book = {
   id: string,
@@ -27,8 +32,40 @@ export type Book = {
 }
 export type BookRefresh = {
   isRunningRefresh: boolean,
+  isRunningExport?: boolean,
   error?: string,
 } & Book;
+
+const sanitizeFilename = (value: string) => {
+  return value
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'book';
+}
+
+const stripHTML = (value: string) => {
+  return value
+    .replace(/<br\s*\/?>/ig, '\n')
+    .replace(/<\/p>/ig, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+const getWritableTxtPath = (dir: string, filename: string) => {
+  let filepath = join(dir, `${filename}.txt`);
+  let index = 1;
+  while (existsSync(filepath)) {
+    filepath = join(dir, `${filename}-(${index++}).txt`);
+  }
+  return filepath;
+}
 
 export const useBookshelfStore = defineStore('Bookshelf', {
   state: () => {
@@ -134,12 +171,96 @@ export const useBookshelfStore = defineStore('Bookshelf', {
         await GLOBAL_DB.store.bookshelfStore.put(_entity);
         this._books.set(id, {
           isRunningRefresh: false,
+          isRunningExport: false,
           error: void 0,
           ...obj
         });
       } catch (e: any) {
         useMessage().error(e.message);
         return errorHandler(e);
+      }
+    },
+    async exportTxt(id: string): Promise<string | undefined> {
+      const message = useMessage();
+      const entity = this._books.get(id);
+      if (!entity || entity.isRunningExport) {
+        return;
+      }
+      const loading = message.loading(`正在导出《${entity.bookname}》`);
+      entity.isRunningExport = true;
+      try {
+        if (!Core.dataPath) {
+          throw newError('dataPath is undefined');
+        }
+        const book = await GLOBAL_DB.store.bookshelfStore.getById(id);
+        if (isNull(book)) {
+          throw newError('无法获取书籍信息');
+        }
+        let booksource: BookSource | null = null;
+        if (book.pid !== BookParser.PID) {
+          const plugin = GLOBAL_PLUGINS.getPluginById<BookSource>(book.pid);
+          if (isUndefined(plugin)) {
+            throw newError(`无法获取插件, 插件ID:${book.pid}`);
+          }
+          if (isNull(plugin.instance)) {
+            throw newError(`插件未启用, 插件ID:${book.pid}`);
+          }
+          if (isUndefined(plugin.props.BASE_URL) || plugin.props.BASE_URL.trim() !== book.baseUrl.trim()) {
+            throw newError('插件请求目标链接[BASE_URL]不匹配');
+          }
+          booksource = plugin.instance;
+        }
+
+        const lines: string[] = [
+          book.bookname,
+          book.author ? `作者：${book.author}` : '',
+          ''
+        ];
+        let errorCount = 0;
+        for (const chapter of book.chapterList) {
+          try {
+            let content = await GLOBAL_DB.store.textContentStore.getByPidAndChapterUrl(book.pid, chapter.url);
+            if (isNull(content) && booksource) {
+              const textContent = await booksource.getTextContent(chapter);
+              content = {
+                id: nanoid(),
+                pid: book.pid,
+                detailUrl: book.detailPageUrl,
+                chapter,
+                textContent
+              } as TextContentStoreEntity;
+              await GLOBAL_DB.store.textContentStore.put(content);
+            }
+            if (isNull(content)) {
+              errorCount++;
+              continue;
+            }
+            lines.push(chapter.title);
+            lines.push(...content.textContent.map(stripHTML).filter(v => v));
+            lines.push('');
+          } catch (e) {
+            errorCount++;
+            GLOBAL_LOG.error('Bookshelf exportTxt chapter', `bookId:${id}`, chapter, e);
+          }
+        }
+
+        const downloadDir = join(Core.dataPath, 'download');
+        await fs.mkdir(downloadDir, { recursive: true });
+        const filepath = getWritableTxtPath(downloadDir, sanitizeFilename(book.bookname));
+        await fs.writeFile(filepath, `${lines.join('\n')}\n`, { encoding: 'utf-8' });
+        if (errorCount > 0) {
+          message.warning(`导出完成，${errorCount} 个章节导出失败：${filepath}`);
+        } else {
+          message.success(`导出完成：${filepath}`);
+        }
+        return filepath;
+      } catch (e: any) {
+        message.error(e.message);
+        GLOBAL_LOG.error(`Bookshelf exportTxt bookId:${id}`, e);
+        return errorHandler(e);
+      } finally {
+        entity.isRunningExport = false;
+        loading.close();
       }
     },
     async remove(id: string): Promise<void> {
