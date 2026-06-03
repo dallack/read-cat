@@ -33,7 +33,7 @@ export type Book = {
 export const useImportBooks = () => {
   const message = useMessage();
   const { rules: txtRules } = storeToRefs(useTxtParseRuleStore());
-  const { put, remove } = useBookshelfStore();
+  const { put } = useBookshelfStore();
   const importBooksWindow = ref<WindowEvent>();
   const isLoading = ref(false);
   const books = ref<Book[]>([]);
@@ -296,19 +296,14 @@ export const useImportBooks = () => {
         intro,
         coverImageUrl
       });
-      const ps = [];
-      for (const textContent of textContents) {
-        ps.push(GLOBAL_DB.store.textContentStore.put(textContent));
+      try {
+        await GLOBAL_DB.store.textContentStore.putMany(textContents);
+      } catch (e) {
+        await GLOBAL_DB.store.textContentStore.removeByPidAndDetailUrl(bookshelf.pid, bookshelf.detailPageUrl);
+        throw e;
       }
-      for (const item of await Promise.allSettled(ps)) {
-        if (item.status === 'rejected') {
-          await remove(bookshelf.id);
-          await GLOBAL_DB.store.textContentStore.removeByPidAndDetailUrl(bookshelf.pid, bookshelf.detailPageUrl);
-          throw item.reason;
-        }
-      }
-      await put(bookshelf).catch(e => {
-        GLOBAL_DB.store.textContentStore.removeByPidAndDetailUrl(bookshelf.pid, bookshelf.detailPageUrl);
+      await put(bookshelf).catch(async e => {
+        await GLOBAL_DB.store.textContentStore.removeByPidAndDetailUrl(bookshelf.pid, bookshelf.detailPageUrl);
         return Promise.reject(e);
       });
       book.status.type = 'fulfilled';

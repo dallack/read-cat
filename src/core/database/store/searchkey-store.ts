@@ -3,9 +3,10 @@ import { isNull } from '../../is';
 import { useSearchStore } from '../../../store/search';
 import { SearchKeyStoreEntity } from '../database';
 import { useMessage } from '../../../hooks/message';
+import { JsonFileDatabase } from '../json-file-database';
 
 export class SearchKeyStoreDatabase extends BaseStoreDatabase<SearchKeyStoreEntity> {
-  constructor(db: IDBDatabase, storeName: string) {
+  constructor(db: JsonFileDatabase, storeName: string) {
     super(db, storeName, 'SearchKeyStoreDatabase');
     this.read();
   }

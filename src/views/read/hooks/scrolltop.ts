@@ -14,19 +14,14 @@ export const useScrollTop = (pid: string, detailUrl: string) => {
   let scrollTop = 0;
   const listener = (e: Event) => {
     scrollTop = (<HTMLElement>e.target).scrollTop;
-    bookshelf.getBookshelfEntity(pid, detailUrl).then(entity => {
-      if (!entity) {
-        return;
-      }
-      const index = currentChapter.value?.index || entity.readIndex;
-      bookshelf.put({
-        ...entity,
-        readIndex: index,
-        readScrollTop: scrollTop
-      }).then(() => {
-        currentReadScrollTop.chapterIndex = index;
-        currentReadScrollTop.scrollTop = scrollTop;
-      });
+    const index = currentChapter.value?.index ?? currentReadScrollTop.chapterIndex;
+    bookshelf.updateReadProgress(pid, detailUrl, {
+      readIndex: index,
+      readScrollTop: scrollTop,
+      readChapterTitle: currentChapter.value?.title
+    }).then(() => {
+      currentReadScrollTop.chapterIndex = index;
+      currentReadScrollTop.scrollTop = scrollTop;
     });
   }
 
@@ -36,14 +31,10 @@ export const useScrollTop = (pid: string, detailUrl: string) => {
   });
   onUnmounted(() => {
     mainElement.value.removeEventListener('scrollend', listener);
-    bookshelf.getBookshelfEntity(pid, detailUrl).then(entity => {
-      if (!entity) {
-        return;
-      }
-      bookshelf.put({
-        ...entity,
-        readScrollTop: scrollTop
-      });
+    bookshelf.updateReadProgress(pid, detailUrl, {
+      readIndex: currentChapter.value?.index ?? currentReadScrollTop.chapterIndex,
+      readScrollTop: scrollTop,
+      readChapterTitle: currentChapter.value?.title
     });
   });
 }

@@ -9,9 +9,10 @@ import fsp from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { Core } from '../..';
+import { JsonFileDatabase } from '../json-file-database';
 
 export class SettingsStoreDatabase extends BaseStoreDatabase<SettingsEntity> {
-  constructor(db: IDBDatabase, storeName: string) {
+  constructor(db: JsonFileDatabase, storeName: string) {
     super(db, storeName, 'SettingsStoreDatabase');
   }
 

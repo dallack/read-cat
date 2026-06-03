@@ -1,4 +1,5 @@
 import { isNull } from '../is';
+import path from 'path';
 import { SearchKeyStoreDatabase } from './store/searchkey-store';
 import { HistoryStoreDatabase } from './store/history-store';
 import { PluginsStoreDatabase } from './store/plugin-store';
@@ -11,6 +12,7 @@ import { newError } from '../utils';
 import { ReadColorStoreDatabase } from './store/read-color-store';
 import { TxtParseRuleStoreDatabase } from './store/txt-parse-rule-store';
 import { PluginsRequireDatabase } from './store/plugin-require';
+import { JsonFileDatabase } from './json-file-database';
 
 export enum StoreName {
   PLUGINS = 'store_plugins_jscode',
@@ -27,10 +29,10 @@ export enum StoreName {
 }
 
 export class Database {
-  public static readonly VERSION: number = 11;
+  public static readonly VERSION: number = 12;
   public static readonly NAME: string = 'ReadCatDatabase';
 
-  private db: IDBDatabase | null = null;
+  private db: JsonFileDatabase | null = null;
 
   private _store: {
     pluginsJSCode: PluginsJSCodeDatabase,
@@ -76,202 +78,18 @@ export class Database {
     }
 
   }
-  public open() {
-    return new Promise<void>((reso, reje) => {
-      try {
-        const requ = indexedDB.open(Database.NAME, Database.VERSION);
-        requ.onupgradeneeded = async () => {
-          this.db = requ.result;
-          await this.createDatabase();
-          this.initStore();
-          return reso();
-        }
-        requ.onsuccess = () => {
-          this.db = requ.result;
-          this.initStore();
-          return reso();
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error('Database open', requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error('Database open', e);
-        return reje(e);
-      }
-    });
+  public async open(dataPath?: string) {
+    try {
+      const rootPath = path.join(dataPath || process.cwd(), 'db');
+      this.db = new JsonFileDatabase(rootPath, Object.values(StoreName), StoreName.TEXT_CONTENT);
+      await this.db.open();
+      this.initStore();
+    } catch (e) {
+      GLOBAL_LOG.error('Database open', e);
+      return Promise.reject(e);
+    }
   }
   public close() {
-    this.db?.close();
-  }
-
-  private createStore(storeName: string, storeParams: IDBObjectStoreParameters | null, indexs: {
-    name: string,
-    keyPath: string | Iterable<string>,
-    options?: IDBIndexParameters
-  }[] | null) {
-    return new Promise<void>((reso, reje) => {
-      try {
-        if (isNull(this.db)) {
-          throw newError('Database opening failure');
-        }
-        if (this.db.objectStoreNames.contains(storeName)) {
-          return;
-        }
-        const store = this.db.createObjectStore(storeName, isNull(storeParams) ? void 0 : storeParams);
-        if (!isNull(indexs)) {
-          for (const index of indexs) {
-            store.createIndex(index.name, index.keyPath, index.options);
-          }
-        }
-        store.transaction.oncomplete = () => {
-          return reso();
-        }
-        store.transaction.onerror = () => {
-          GLOBAL_LOG.error(`Database createStore ${storeName}`, store.transaction.error);
-          return reje(store.transaction.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(`Database createStore ${storeName}`, e);
-        return reje(e);
-      }
-    });
-  }
-  private async createDatabase() {
-    const stores = [
-      this.createStore(StoreName.PLUGINS, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }]),
-      this.createStore(StoreName.PLUGINS_STORE, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_pid_key',
-        keyPath: ['pid', 'key'],
-        options: {
-          unique: true
-        }
-      }, {
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }, {
-        name: 'index_pid',
-        keyPath: 'pid',
-        options: {
-          unique: false
-        }
-      }]),
-      this.createStore(StoreName.SEARCH_KEY, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }]),
-      this.createStore(StoreName.BOOKSHELF, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }, {
-        name: 'index_pid_url',
-        keyPath: ['pid', 'detailPageUrl'],
-        options: {
-          unique: true
-        }
-      }]),
-      this.createStore(StoreName.TEXT_CONTENT, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }, {
-        name: 'index_pid_chapterUrl',
-        keyPath: ['pid', 'chapter.url'],
-        options: {
-          unique: true
-        }
-      }, {
-        name: 'index_pid_detailUrl',
-        keyPath: ['pid', 'detailUrl'],
-        options: {
-          unique: false
-        }
-      }]),
-      this.createStore(StoreName.BOOKMARK, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }, {
-        name: 'index_chapterUrl',
-        keyPath: ['chapterUrl'],
-        options: {
-          unique: false
-        }
-      }, {
-        name: 'index_detailUrl',
-        keyPath: ['detailUrl'],
-        options: {
-          unique: false
-        }
-      }]),
-      this.createStore(StoreName.SETTINGS, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }]),
-      this.createStore(StoreName.READ_COLOR, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }]),
-      this.createStore(StoreName.TXT_PARSE_RULE, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }]),
-      this.createStore(StoreName.PLUGIN_REQUIRE, {
-        keyPath: 'id'
-      }, [{
-        name: 'index_id',
-        keyPath: 'id',
-        options: {
-          unique: true
-        }
-      }]),
-    ];
-    for (const store of stores) await store;
+    return;
   }
 }

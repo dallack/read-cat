@@ -15,6 +15,12 @@ process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
 
+const portableDataPath = process.env.READCAT_PORTABLE_DATA_DIR ||
+  path.join(app.isPackaged ? path.dirname(process.execPath) : process.cwd(), 'data');
+const portableDataRootPath = path.resolve(portableDataPath);
+const portableRuntimePath = path.join(portableDataRootPath, 'runtime');
+app.setPath('userData', portableRuntimePath);
+
 const lowElectronVersion = Number(process.versions.electron.split('.')[0]) <= 22;
 
 app.commandLine.appendSwitch('ignore-certificate-errors', 'true');
@@ -125,6 +131,9 @@ function createWindow(width?: number, height?: number) {
   });
   ipcMain.on(EventCode.SYNC_GET_USER_DATA_PATH, e => {
     e.returnValue = app.getPath('userData');
+  });
+  ipcMain.on(EventCode.SYNC_GET_DATA_PATH, e => {
+    e.returnValue = portableDataRootPath;
   });
   ipcMain.on(EventCode.ASYNC_WINDOW_SET_FULLSCREEN, (_, is) => {
     win?.setFullScreen(is);

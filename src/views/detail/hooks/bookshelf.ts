@@ -66,14 +66,9 @@ export const useBookshelf = (pid: string, detailUrl: string, detailResult: Ref<D
     if (!bookshelf.exist(pid, detailUrl)) {
       return;
     }
-    bookshelf.getBookshelfEntity(pid, detailUrl).then(entity => {
-      if (!entity) {
-        return;
-      }
-      bookshelf.put({
-        ...entity,
-        readIndex: newVal
-      });
+    bookshelf.updateReadProgress(pid, detailUrl, {
+      readIndex: newVal,
+      readChapterTitle: detailResult.value?.chapterList[newVal]?.title || ''
     });
   });
   return {

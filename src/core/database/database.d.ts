@@ -1,10 +1,11 @@
-import { Settings } from '../../store/defined/settings';
-import { DetailEntity, Chapter } from '../book/book';
-import { TxtParserType, Pattern } from '../book/txt-parser';
+import type { Settings } from '../../store/defined/settings';
+import type { DetailEntity, Chapter } from '../book/book';
+import type { TxtParserType, Pattern } from '../book/txt-parser';
+import type { JsonFileDatabase } from './json-file-database';
 
 
 export interface DatabaseStoreInterface<V> {
-  db: IDBDatabase;
+  db: JsonFileDatabase;
   storeName: string;
   getById(id: string): Promise<V | null>;
   getAll(): Promise<V[] | null>;
@@ -100,5 +101,19 @@ export interface PluginRequireEntity {
 
 export interface DatabaseClassEntity {
   store: DatabaseStore,
-  open(): Promise<void>;
+  open(dataPath?: string): Promise<void>;
+}
+
+export type DatabaseStore = {
+  pluginsJSCode: import('./store/plugins-jscode').PluginsJSCodeDatabase
+  pluginsStore: import('./store/plugin-store').PluginsStoreDatabase
+  historyStore: import('./store/history-store').HistoryStoreDatabase
+  searchKeyStore: import('./store/searchkey-store').SearchKeyStoreDatabase
+  bookshelfStore: import('./store/bookshelf-store').BookshelfStoreDatabase
+  textContentStore: import('./store/text-content-store').TextContentStoreDatabase
+  bookmarkStore: import('./store/bookmark-store').BookmarkStoreDatabase
+  settingsStore: import('./store/settings-store').SettingsStoreDatabase
+  readColorStore: import('./store/read-color-store').ReadColorStoreDatabase
+  txtParseRuleStore: import('./store/txt-parse-rule-store').TxtParseRuleStoreDatabase
+  pluginRequireStore: import('./store/plugin-require').PluginsRequireDatabase
 }

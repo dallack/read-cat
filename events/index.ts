@@ -70,6 +70,10 @@ export class EventCode {
    * 获取用户目录路径
    */
   static SYNC_GET_USER_DATA_PATH: string
+  /**
+   * 获取便携数据目录路径
+   */
+  static SYNC_GET_DATA_PATH: string
 
   static {
     Object.keys(EventCode).forEach(key => {

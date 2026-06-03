@@ -4,10 +4,11 @@ import { BaseStoreDatabase } from './base-store';
 import { useMessage } from '../../../hooks/message';
 import { base64ToBlob, cloneByJSON } from '../../utils';
 import { createHash } from 'crypto';
+import { JsonFileDatabase } from '../json-file-database';
 
 export class ReadColorStoreDatabase extends BaseStoreDatabase<ReadBackground> {
 
-  constructor(db: IDBDatabase, storeName: string) {
+  constructor(db: JsonFileDatabase, storeName: string) {
     super(db, storeName, 'ReadColorStoreDatabase');
     this.read();
   }

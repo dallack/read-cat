@@ -74,13 +74,16 @@ export const useDetailStore = defineStore('Detail', {
           return;
         }
         if (!isNull(book)) {
-          await bookshelf.put({
-            ...book,
-            timestamp: Date.now()
-          });
           const cacheIndexs = (await GLOBAL_DB.store.textContentStore.getByPidAndDetailUrl(pid, url))?.map(v => v.chapter.index);
           this.cacheIndexs[url] = isUndefined(cacheIndexs) ? [] : cacheIndexs;
           if (!refresh || pid === BookParser.PID) {
+            const timestamp = Date.now();
+            await bookshelf.updateReadProgress(pid, url, {
+              readIndex: book.readIndex,
+              readScrollTop: book.readScrollTop,
+              readChapterTitle: book.chapterList[book.readIndex]?.title || '',
+              timestamp
+            });
             if (book.baseUrl !== BASE_URL) {
               this.error = '插件请求目标链接不匹配, 请更新详情页';
               return;

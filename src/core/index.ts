@@ -24,6 +24,7 @@ export class Core {
   static plugins: Plugins;
   static database: Database;
   static userDataPath: string | undefined;
+  static dataPath: string | undefined;
   static isDev: boolean;
   static updater: Updater;
   static sandbox: Sandbox;
@@ -129,7 +130,9 @@ export class Core {
         Core.setValue(window, 'GLOBAL_IPC', Core.ipc);
         Core.isDev = Core.ipc.sendSync<boolean>(EventCode.SYNC_IS_DEV);
         const userDataPath = Core.ipc.sendSync<string>(EventCode.SYNC_GET_USER_DATA_PATH);
+        const dataPath = Core.ipc.sendSync<string>(EventCode.SYNC_GET_DATA_PATH);
         Core.setValue(Core, 'userDataPath', userDataPath || void 0);
+        Core.setValue(Core, 'dataPath', dataPath || void 0);
         return reso();
       } catch (e) {
         return reje(e);
@@ -145,7 +148,7 @@ export class Core {
 
   public static async initDatabase() {
     const db = new Database();
-    await db.open();
+    await db.open(Core.dataPath);
     await db.store.settingsStore.read().finally(() => db.store.settingsStore.watch());
     Core.setValue(Core, 'database', db);
     Core.setValue(window, 'GLOBAL_DB', Core.database);

@@ -6,6 +6,7 @@ import { isNull, isUndefined } from '../core/is';
 import { useSettingsStore } from './settings';
 import { BookSource } from '../core/plugins/defined/booksource';
 import { BookParser } from '../core/book/book-parser';
+import type { BookshelfReadProgress } from '../core/database/store/bookshelf-store';
 
 export type Book = {
   id: string,
@@ -56,6 +57,28 @@ export const useBookshelfStore = defineStore('Bookshelf', {
       return Array.from(this._books.values())
         .findIndex(v => v.pid === pid && v.detailPageUrl === detailPageUrl)
         >= 0;
+    },
+    async updateReadProgress(pid: string, detailPageUrl: string, progress: BookshelfReadProgress): Promise<void> {
+      try {
+        const updated = await GLOBAL_DB.store.bookshelfStore.updateReadProgress(pid, detailPageUrl, progress);
+        if (!updated) {
+          return;
+        }
+        const entity = Array.from(this._books.values())
+          .find(v => v.pid === pid && v.detailPageUrl === detailPageUrl);
+        if (!entity) {
+          return;
+        }
+        this._books.set(entity.id, {
+          ...entity,
+          readIndex: isUndefined(progress.readIndex) ? entity.readIndex : progress.readIndex,
+          readChapterTitle: isUndefined(progress.readChapterTitle) ? entity.readChapterTitle : progress.readChapterTitle,
+          timestamp: isUndefined(progress.timestamp) ? entity.timestamp : progress.timestamp
+        });
+      } catch (e: any) {
+        useMessage().error(e.message);
+        return errorHandler(e);
+      }
     },
     async put(entity: BookshelfStoreEntity): Promise<void> {
       try {

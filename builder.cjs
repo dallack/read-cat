@@ -94,8 +94,7 @@ platforms.forEach(a => {
   if (platform === '--win32') {
     (archs.length <= 0) && (archs.push(Arch.x64, Arch.ia32));
     targets = Platform.WINDOWS.createTarget([
-      'nsis',
-      'tar.gz'
+      'zip'
     ], ...archs);
   } else if (platform === '--darwin') {
     (archs.length <= 0) && (archs.push(Arch.x64, Arch.arm64));
@@ -119,6 +118,7 @@ platforms.forEach(a => {
 
 const exts = [
   '.exe',
+  '.zip',
   '.tar.gz',
   '.dmg',
   '.appimage',

@@ -1,64 +1,28 @@
 import { toRaw } from 'vue';
-import { isNull, isUndefined } from '../../is';
+import { isNull } from '../../is';
 import { PluginsStoreEntity } from '../database';
+import { JsonFileDatabase } from '../json-file-database';
 import { BaseStoreDatabase } from './base-store';
 import { errorHandler } from '../../utils';
 
 export class PluginsStoreDatabase extends BaseStoreDatabase<PluginsStoreEntity> {
 
-  constructor(db: IDBDatabase, storeName: string) {
+  constructor(db: JsonFileDatabase, storeName: string) {
     super(db, storeName, 'PluginsStoreDatabase');
   }
 
   getAllByPid(pid: string): Promise<PluginsStoreEntity[] | null> {
-    return new Promise<PluginsStoreEntity[] | null>((reso, reje) => {
-      try {
-        const requ = this.db
-          .transaction([this.storeName], 'readonly')
-          .objectStore(this.storeName)
-          .index('index_pid')
-          .getAll(pid);
-        requ.onsuccess = () => {
-          let result: PluginsStoreEntity[] | null = null;
-          if (!isUndefined(requ.result)) {
-            result = requ.result;
-          }
-          return reso(result);
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, `getByPid pid:${pid}`, requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(this.tag, `getByPid pid:${pid}`, e);
-        return reje(e);
-      }
+    return this.query(entity => entity.pid === pid).catch(e => {
+      GLOBAL_LOG.error(this.tag, `getByPid pid:${pid}`, e);
+      return Promise.reject(e);
     });
   }
   getByPidAndKey(pid: string, key: string): Promise<PluginsStoreEntity | null> {
-    return new Promise<PluginsStoreEntity | null>((reso, reje) => {
-      try {
-        const requ = this.db
-          .transaction([this.storeName], 'readonly')
-          .objectStore(this.storeName)
-          .index('index_pid_key')
-          .get(IDBKeyRange.only([pid, key]));
-        requ.onsuccess = () => {
-          let result: PluginsStoreEntity | null = null;
-          if (!isUndefined(requ.result)) {
-            result = requ.result;
-          }
-          return reso(result);
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, `getByIdAndKey pid:${pid}, key:${key}`, requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(this.tag, `getByIdAndKey pid:${pid}, key:${key}`, e);
-        return reje(e);
-      }
-
+    return this.queryOne(entity => {
+      return entity.pid === pid && entity.key === key;
+    }).catch(e => {
+      GLOBAL_LOG.error(this.tag, `getByIdAndKey pid:${pid}, key:${key}`, e);
+      return Promise.reject(e);
     });
   }
   async put(val: PluginsStoreEntity): Promise<void> {
@@ -86,6 +50,6 @@ export class PluginsStoreDatabase extends BaseStoreDatabase<PluginsStoreEntity> 
     }
   }
   removeByPid(pid: string): Promise<void> {
-    return super.useCursorRemove('index_pid', [pid]);
+    return this.removeWhere(entity => entity.pid === pid);
   }
 }

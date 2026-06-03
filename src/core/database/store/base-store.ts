@@ -1,12 +1,12 @@
-import { isUndefined } from '../../is';
 import { DatabaseStoreInterface } from '../database';
 import { cloneByJSON } from '../../utils';
+import { JsonFileDatabase } from '../json-file-database';
 
 export class BaseStoreDatabase<T> implements DatabaseStoreInterface<T> {
-  public db: IDBDatabase;
+  public db: JsonFileDatabase;
   storeName: string;
   tag: string;
-  constructor(db: IDBDatabase, storeName: string, tag: string) {
+  constructor(db: JsonFileDatabase, storeName: string, tag: string) {
     this.db = db;
     this.storeName = storeName;
     this.tag = tag;
@@ -15,53 +15,15 @@ export class BaseStoreDatabase<T> implements DatabaseStoreInterface<T> {
     return cloneByJSON(obj);
   }
   getById(id: string): Promise<T | null> {
-    return new Promise<T | null>((reso, reje) => {
-      try {
-        const requ = this.db
-          .transaction([this.storeName], 'readonly')
-          .objectStore(this.storeName)
-          .index('index_id')
-          .get(id);
-        requ.onsuccess = () => {
-          let result: T | null = null;
-          if (!isUndefined(requ.result)) {
-            result = requ.result;
-          }
-          return reso(result);
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, 'getById', id, requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(this.tag, 'getById', id, e);
-        return reje(e);
-      }
-
+    return this.db.getById<T>(this.storeName, id).catch(e => {
+      GLOBAL_LOG.error(this.tag, 'getById', id, e);
+      return Promise.reject(e);
     });
   }
   getAll(): Promise<T[] | null> {
-    return new Promise<T[] | null>((reso, reje) => {
-      try {
-        const requ = this.db
-          .transaction([this.storeName], 'readonly')
-          .objectStore(this.storeName)
-          .getAll();
-        requ.onsuccess = () => {
-          let result = null;
-          if (!isUndefined(requ.result)) {
-            result = requ.result;
-          }
-          return reso(result);
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, 'getAll', requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(this.tag, 'getAll', e);
-        return reje(e);
-      }
+    return this.db.getAll<T>(this.storeName).catch(e => {
+      GLOBAL_LOG.error(this.tag, 'getAll', e);
+      return Promise.reject(e);
     });
   }
   /**
@@ -69,70 +31,39 @@ export class BaseStoreDatabase<T> implements DatabaseStoreInterface<T> {
    * @default true
    */
   put(val: T, revocationProxy = true): Promise<void> {
-    return new Promise<void>((reso, reje) => {
-      try {
-        const _val = revocationProxy ? this.revocationProxy(val) : val;
-        const requ = this.db
-          .transaction([this.storeName], 'readwrite')
-          .objectStore(this.storeName)
-          .put(_val);
-        requ.onsuccess = () => {
-          return reso();
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, 'put', requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
+    try {
+      const _val = revocationProxy ? this.revocationProxy(val) : val;
+      return this.db.put(this.storeName, _val).catch(e => {
         GLOBAL_LOG.error(this.tag, 'put', e);
-        return reje(e);
-      }
-    });
+        return Promise.reject(e);
+      });
+    } catch (e) {
+      GLOBAL_LOG.error(this.tag, 'put', e);
+      return Promise.reject(e);
+    }
   }
   remove(id: string): Promise<void> {
-    return new Promise<void>((reso, reje) => {
-      try {
-        const requ = this.db
-          .transaction([this.storeName], 'readwrite')
-          .objectStore(this.storeName)
-          .delete(id);
-        requ.onsuccess = () => {
-          return reso();
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, 'remove', id, requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(this.tag, 'remove', id, e);
-        return reje(e);
-      }
+    return this.db.remove(this.storeName, id).catch(e => {
+      GLOBAL_LOG.error(this.tag, 'remove', id, e);
+      return Promise.reject(e);
     });
   }
-  useCursorRemove(indexName: string, keys: any[]): Promise<void> {
-    return new Promise<void>((reso, reje) => {
-      try {
-        const requ = this.db
-          .transaction([this.storeName], 'readwrite')
-          .objectStore(this.storeName)
-          .index(indexName)
-          .openCursor(IDBKeyRange.only(keys));
-
-        requ.onsuccess = () => {
-          if (!requ.result) {
-            return reso();
-          }
-          requ.result.delete();
-          requ.result.continue();
-        }
-        requ.onerror = () => {
-          GLOBAL_LOG.error(this.tag, 'useCursorRemove', indexName, ...keys, requ.error);
-          return reje(requ.error);
-        }
-      } catch (e) {
-        GLOBAL_LOG.error(this.tag, 'useCursorRemove', indexName, ...keys, e);
-        return reje(e);
-      }
+  protected query(predicate: (val: T) => boolean): Promise<T[]> {
+    return this.db.query<T>(this.storeName, predicate).catch(e => {
+      GLOBAL_LOG.error(this.tag, 'query', e);
+      return Promise.reject(e);
+    });
+  }
+  protected queryOne(predicate: (val: T) => boolean): Promise<T | null> {
+    return this.db.queryOne<T>(this.storeName, predicate).catch(e => {
+      GLOBAL_LOG.error(this.tag, 'queryOne', e);
+      return Promise.reject(e);
+    });
+  }
+  protected removeWhere(predicate: (val: T) => boolean): Promise<void> {
+    return this.db.removeWhere<T>(this.storeName, predicate).catch(e => {
+      GLOBAL_LOG.error(this.tag, 'removeWhere', e);
+      return Promise.reject(e);
     });
   }
 

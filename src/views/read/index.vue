@@ -29,7 +29,9 @@ const route = useRoute();
 const pid = String(route.query.pid);
 const detailUrl = String(route.query.detailUrl);
 
-const { currentChapter } = storeToRefs(useTextContentStore());
+const textContentStore = useTextContentStore();
+const detailStore = useDetailStore();
+const { currentChapter, textContent } = storeToRefs(textContentStore);
 const { mainElement } = storeToRefs(useScrollTopStore());
 const { scrollToTextContent } = useScrollTopStore();
 const { calcReadProgress, onRefresh } = useWindowStore();
@@ -55,20 +57,54 @@ const {
   pageHeight,
 } = useScrollToggleChapter();
 
-onMounted(() => {
-  nextTick(() => {
-    calcReadProgress(mainElement.value);
-  });
-});
-const { isRunningGetTextContent } = storeToRefs(useTextContentStore());
-const { getTextContent, nextChapter, prevChapter } = useTextContentStore();
+const { isRunningGetTextContent } = storeToRefs(textContentStore);
+const { getTextContent, nextChapter, prevChapter } = textContentStore;
 
 useScrollTop(pid, detailUrl);
 
 const message = useMessage();
-const { setCurrentReadIndex } = useDetailStore();
+const { setCurrentReadIndex } = detailStore;
+const { detailResult, currentReadIndex } = storeToRefs(detailStore);
 const { isSelectPlay, playerStatus } = storeToRefs(useReadAloudStore());
 const { stop: readAloudStop } = useReadAloudStore();
+
+const ensureTextContent = async () => {
+  if (!isNull(currentChapter.value) && !isNull(textContent.value)) {
+    return;
+  }
+  if (!route.query.pid || !route.query.detailUrl) {
+    return;
+  }
+  await detailStore.getDetailPage(pid, detailUrl);
+  if (isNull(detailResult.value)) {
+    message.error('无法获取详情页');
+    return;
+  }
+  const index = currentReadIndex.value >= 0 ? currentReadIndex.value : 0;
+  const chapter = detailResult.value.chapterList[index];
+  if (isUndefined(chapter)) {
+    message.error('无法获取章节信息');
+    return;
+  }
+  await getTextContent(pid, chapter);
+  if (isUndefined(chapter.index)) {
+    setCurrentReadIndex(-1);
+    GLOBAL_LOG.warn(`chapter index is undefined, pid:${pid}`, chapter);
+    message.warning('无法获取章节索引');
+  } else {
+    setCurrentReadIndex(chapter.index);
+  }
+  currentChapter.value = chapter;
+};
+
+onMounted(() => {
+  ensureTextContent().finally(() => {
+    nextTick(() => {
+      calcReadProgress(mainElement.value);
+    });
+  });
+});
+
 onRefresh(PagePath.READ, () => {
   if (isNull(currentChapter.value)) {
     return;

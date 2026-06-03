@@ -2,11 +2,12 @@ import { useMessage } from '../../../hooks/message';
 import { useTxtParseRuleStore } from '../../../store/txt-parse-rules';
 import { isNull } from '../../is';
 import { TxtParseRuleEntity } from '../database';
+import { JsonFileDatabase } from '../json-file-database';
 import { BaseStoreDatabase } from './base-store';
 
 export class TxtParseRuleStoreDatabase extends BaseStoreDatabase<TxtParseRuleEntity> {
 
-  constructor(db: IDBDatabase, storeName: string) {
+  constructor(db: JsonFileDatabase, storeName: string) {
     super(db, storeName, 'TxtParseRuleStoreDatabase');
     this.read();
   }

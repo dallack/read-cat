@@ -41,7 +41,7 @@ export const useTextContentStore = defineStore('TextContent', {
       const detailStore = useDetailStore();
       const { setCurrentReadIndex, currentReadScrollTop } = detailStore;
       const { detailResult, currentDetailUrl, currentPid } = storeToRefs(detailStore);
-      const { exist, getBookshelfEntity, put } = useBookshelfStore();
+      const { exist, updateReadProgress } = useBookshelfStore();
       const { calcReadProgress } = useWindowStore();
       const { scrollToTextContent } = useScrollTopStore();
       const readAloud = useReadAloudStore();
@@ -93,15 +93,10 @@ export const useTextContentStore = defineStore('TextContent', {
           return;
         }
         this.cache(currentPid.value, currentDetailUrl.value, detailResult.value.chapterList, index);
-        getBookshelfEntity(currentPid.value, currentDetailUrl.value).then(entity => {
-          if (!entity) {
-            return;
-          }
-          put({
-            ...entity,
-            readIndex: chapter.index,
-            readScrollTop: 0
-          });
+        updateReadProgress(currentPid.value, currentDetailUrl.value, {
+          readIndex: chapter.index,
+          readScrollTop: 0,
+          readChapterTitle: chapter.title
         });
       } catch (e) {
         e && message.error(errorHandler(e, true));
@@ -126,7 +121,7 @@ export const useTextContentStore = defineStore('TextContent', {
       const win = useWindowStore();
       try {
         if (this.isRunningGetTextContent) {
-          return;
+          throw newError('正在获取章节正文');
         }
         this.isRunningGetTextContent = true;
         this.textContent = null;
@@ -134,7 +129,14 @@ export const useTextContentStore = defineStore('TextContent', {
         win.disableShowSearchBox.set(PagePath.READ, true);
         win.disableShowSearchBox.set(PagePath.DETAIL, true);
         const booksource = GLOBAL_PLUGINS.getPluginInstanceById<BookSource>(pid);
-        const dbTextContent = await GLOBAL_DB.store.textContentStore.getByPidAndChapterUrl(pid, chapter.url);
+        let dbTextContent = await GLOBAL_DB.store.textContentStore.getByPidAndChapterUrl(pid, chapter.url);
+        if (pid === BookParser.PID && isNull(dbTextContent) && !isUndefined(chapter.index)) {
+          const { currentDetailUrl } = storeToRefs(useDetailStore());
+          if (!isNull(currentDetailUrl.value)) {
+            const localTextContents = await GLOBAL_DB.store.textContentStore.getByPidAndDetailUrl(pid, currentDetailUrl.value);
+            dbTextContent = localTextContents?.find(v => v.chapter.index === chapter.index) || null;
+          }
+        }
         this.currentChapter = chapter;
         if ((pid === BookParser.PID || !refresh) && dbTextContent) {
           const { chapter, textContent } = dbTextContent;

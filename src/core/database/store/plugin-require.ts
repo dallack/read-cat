@@ -1,11 +1,12 @@
 import { useMessage } from '../../../hooks/message';
 import { usePluginsStore } from '../../../store/plugins';
 import { PluginRequireEntity } from '../database';
+import { JsonFileDatabase } from '../json-file-database';
 import { BaseStoreDatabase } from './base-store';
 
 export class PluginsRequireDatabase extends BaseStoreDatabase<PluginRequireEntity> {
 
-  constructor(db: IDBDatabase, storeName: string) {
+  constructor(db: JsonFileDatabase, storeName: string) {
     super(db, storeName, 'PluginsRequireDatabase');
     this.read();
   }
