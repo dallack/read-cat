@@ -6,6 +6,50 @@ import { escapeXML } from '../../../utils/html';
 import { WebSocketClient } from '../../../websocket';
 import { createHash } from 'crypto';
 import { getFileTime } from '../../../utils/date';
+import { execSync } from 'child_process';
+
+const DEFAULT_EDGE_VERSION = '130.0.0.0';
+
+function parseEdgeVersion(output: string) {
+  return output.match(/\d+\.\d+\.\d+\.\d+/)?.[0] || '';
+}
+
+function getLocalEdgeVersion() {
+  const commands = process.platform === 'win32'
+    ? [
+      'reg query "HKCU\\Software\\Microsoft\\Edge\\BLBeacon" /v version',
+      'reg query "HKLM\\Software\\Microsoft\\Edge\\BLBeacon" /v version',
+      'reg query "HKLM\\Software\\WOW6432Node\\Microsoft\\Edge\\BLBeacon" /v version',
+      'powershell -NoProfile -Command "(Get-Item \'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\' -ErrorAction SilentlyContinue).VersionInfo.ProductVersion"',
+      'powershell -NoProfile -Command "(Get-Item \'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe\' -ErrorAction SilentlyContinue).VersionInfo.ProductVersion"',
+      'msedge --version'
+    ]
+    : process.platform === 'darwin'
+      ? [
+        '"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --version'
+      ]
+      : [
+        'microsoft-edge --version',
+        'microsoft-edge-stable --version'
+      ];
+
+  for (const command of commands) {
+    try {
+      const version = parseEdgeVersion(execSync(command, {
+        encoding: 'utf8',
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore']
+      }));
+      if (version) {
+        return version;
+      }
+    } catch {
+      // Ignore failed probes and keep the built-in fallback below.
+    }
+  }
+
+  return DEFAULT_EDGE_VERSION;
+}
 
 /**
  * 功能实现参考自 https://github.com/rany2/edge-tts/
@@ -28,7 +72,7 @@ export class EdgeTTSEngine {
     edgeVersion: {
       label: 'Edge版本号',
       type: 'string',
-      default: '130.0.0.0'
+      default: getLocalEdgeVersion()
     }
   };
 
