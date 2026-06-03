@@ -61,6 +61,7 @@ export class EventCode {
 
   /**页面加载完成 */
   static ASYNC_DID_FINISH_LOAD: string
+  static ASYNC_SCRAPE_DYNAMIC_PAGE: string
 
   /**
    * 开发环境

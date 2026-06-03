@@ -20,6 +20,7 @@ import {
   PluginInterface,
   PluginRequestConfig,
   PluginsOptions,
+  ScrapeDynamicPageOptions,
 } from './defined/plugins';
 import { BookSource } from './defined/booksource';
 import { BookStore } from './defined/bookstore';
@@ -38,6 +39,7 @@ import { BaiduTTSEngine } from './built-in/tts/baidu';
 import { AzureTTSEngine } from './built-in/tts/azure';
 import { Core } from '..';
 import { WebSocketClient } from '../websocket';
+import { EventCode } from '../../../events';
 
 export enum PluginType {
   BOOK_SOURCE,
@@ -404,7 +406,10 @@ export class Plugins {
         store: this.getPluginStore(cls.ID),
         cheerio: load,
         nanoid: () => nanoid(),
-        uuid
+        uuid,
+        scrapeDynamicPage: (url: string, options?: ScrapeDynamicPageOptions) => {
+          return GLOBAL_IPC.invoke(EventCode.ASYNC_SCRAPE_DYNAMIC_PAGE, url, options);
+        }
       });
     } finally {
       this.callListener('created', cls.ID);

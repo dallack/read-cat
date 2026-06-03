@@ -38,6 +38,94 @@ const isOverwriteTitleBar = process.platform === 'linux' || lowElectronVersion;
 const debugModePath = path.join(app.getPath('userData'), 'debug_mode');
 const isDebugMode = existsSync(debugModePath);
 
+type ScrapeDynamicPageOptions = {
+  timeout?: number,
+  delay?: number,
+  waitForSelector?: string,
+  userAgent?: string,
+  headers?: Record<string, string>
+}
+
+const normalizeTimeout = (value?: number) => {
+  return Math.max(1000, Math.min(Number(value) || 15000, 60000));
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+const waitForSelector = async (target: BrowserWindow, selector: string, timeout: number) => {
+  const escapedSelector = JSON.stringify(selector);
+  await target.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const selector = ${escapedSelector};
+      const deadline = Date.now() + ${timeout};
+      const check = () => {
+        if (document.querySelector(selector)) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error('waitForSelector timeout: ' + selector));
+          return;
+        }
+        setTimeout(check, 100);
+      };
+      check();
+    })
+  `);
+}
+
+const scrapeDynamicPage = async (url: string, options: ScrapeDynamicPageOptions = {}) => {
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error('Only http/https URLs are supported');
+  }
+
+  const timeout = normalizeTimeout(options.timeout);
+  const target = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 720,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: false,
+      backgroundThrottling: false
+    }
+  });
+
+  try {
+    if (options.userAgent) {
+      target.webContents.setUserAgent(options.userAgent);
+    }
+
+    const loadOptions = options.headers ? {
+      extraHeaders: Object.entries(options.headers)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n')
+    } : void 0;
+
+    const load = target.loadURL(url, loadOptions);
+    await Promise.race([
+      load,
+      sleep(timeout).then(() => {
+        throw new Error(`Dynamic page load timeout: ${url}`);
+      })
+    ]);
+
+    if (options.waitForSelector) {
+      await waitForSelector(target, options.waitForSelector, timeout);
+    }
+
+    if (options.delay && options.delay > 0) {
+      await sleep(Math.min(options.delay, timeout));
+    }
+
+    return target.webContents.executeJavaScript('document.documentElement.outerHTML');
+  } finally {
+    target.destroy();
+  }
+}
+
 function createWindow(width?: number, height?: number) {
   win = new BrowserWindow({
     title: 'ReadCat',
@@ -98,6 +186,11 @@ function createWindow(width?: number, height?: number) {
   });
   useCache();
   useDialog();
+
+  ipcMain.removeHandler(EventCode.ASYNC_SCRAPE_DYNAMIC_PAGE);
+  ipcMain.handle(EventCode.ASYNC_SCRAPE_DYNAMIC_PAGE, (_, url: string, options?: ScrapeDynamicPageOptions) => {
+    return scrapeDynamicPage(url, options);
+  });
 
   (process.platform === 'win32') && ipcMain.on(EventCode.ASYNC_SET_TITLE_BAR_STYLE, (_, bgcolor, textcolor) => {
     if (isOverwriteTitleBar) {

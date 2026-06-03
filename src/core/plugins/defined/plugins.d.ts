@@ -37,12 +37,25 @@ export interface PluginRequestMethod {
   get(url: string, config?: PluginRequestConfig): Promise<{ body: any, code?: number, headers: IncomingHttpHeaders }>;
   post(url: string, config?: PluginRequestConfig): Promise<{ body: any, code?: number, headers: IncomingHttpHeaders }>;
 }
+export type ScrapeDynamicPageOptions = {
+  /** 页面加载超时时间，默认 15000，范围 1000-60000 */
+  timeout?: number,
+  /** 页面加载完成后额外等待的毫秒数 */
+  delay?: number,
+  /** 等待指定选择器出现后再返回页面 HTML */
+  waitForSelector?: string,
+  /** 自定义 User-Agent */
+  userAgent?: string,
+  /** 额外请求头 */
+  headers?: Record<string, string>
+}
 export type PluginConstructorParams = {
   request: PluginRequestMethod,
   store: BasePluginStoreInterface,
   cheerio,
   nanoid: () => string,
-  uuid: (noDash?: boolean) => string
+  uuid: (noDash?: boolean) => string,
+  scrapeDynamicPage: (url: string, options?: ScrapeDynamicPageOptions) => Promise<string>
 }
 export type SearchFilter = boolean | ((entity: SearchEntity, searchKey: string, author?: string) => boolean);
 /** 插件设置项 */
