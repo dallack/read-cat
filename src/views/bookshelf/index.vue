@@ -203,8 +203,9 @@ const exportTxt = (e: MouseEvent, book: Book) => {
                       <Text v-memo="[item.latestChapterTitle]" :title="`最新章节 ${item.latestChapterTitle}`" ellipsis max-width="145">{{ item.latestChapterTitle }}</Text>
                     </template>
                   </div>
-                  <ElButton class="export-txt" size="small" circle :icon="IconDownload"
-                    :loading="item.isRunningExport" title="导出TXT" @click="e => exportTxt(e, item)" />
+                  <!-- 导出当前书籍为 TXT，文件保存到数据目录的 download 文件夹 -->
+                 <!-- <ElButton class="export-txt" size="small" circle :icon="IconDownload"
+                    :loading="item.isRunningExport" title="下载" @click="e => exportTxt(e, item)" /> -->
                   <ElCheckbox v-memo="[item.id]" :key="`checkbox-${item.id}`" :value="item.id"
                     @click="(e: MouseEvent) => e.stopPropagation()" />
                 </div>
