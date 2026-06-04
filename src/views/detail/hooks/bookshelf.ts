@@ -50,8 +50,8 @@ export const useBookshelf = (pid: string, detailUrl: string, detailResult: Ref<D
       id: nanoid(),
       detailPageUrl: detailUrl,
       ...toRaw(detailResult.value),
-      readIndex: currentReadScrollTop.chapterIndex,
-      readScrollTop: currentReadScrollTop.scrollTop,
+      readIndex: currentReadIndex.value >= 0 ? currentReadIndex.value : -1,
+      readScrollTop: currentReadIndex.value >= 0 ? currentReadScrollTop.scrollTop : 0,
       searchIndex: [detailResult.value.bookname, detailResult.value.author].join(' '),
       timestamp: Date.now()
     }).finally(() => {

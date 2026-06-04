@@ -109,13 +109,16 @@ router.afterEach((to, from, fail) => {
  * already: 跳转至上次已读章节页
  * latest: 跳转至最新章节页
  */
-const goDetailPage = (item: Book, to: 'normal' | 'already' | 'latest' = 'normal') => {
+const goDetailPage = (item: Book, to?: 'normal' | 'already' | 'latest') => {
+  const hasReadProgress = item.readIndex >= 0 && !!item.readChapterTitle;
+  const target = to || (hasReadProgress ? 'already' : 'normal');
   router.push({
     path: PagePath.DETAIL,
     query: {
       pid: item.pid,
       detailUrl: item.detailPageUrl,
-      to
+      to: target,
+      readIndex: target === 'already' && hasReadProgress ? item.readIndex : void 0
     }
   });
 }

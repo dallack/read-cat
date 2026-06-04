@@ -69,12 +69,17 @@ onReady(() => {
   }
   let index = -1;
   if (to === 'already') {
-    index = currentReadIndex.value;
+    const queryReadIndex = Array.isArray(route.query.readIndex) ? route.query.readIndex[0] : route.query.readIndex;
+    const readIndex = Number(queryReadIndex);
+    index = Number.isInteger(readIndex) && readIndex >= 0 ? readIndex : currentReadIndex.value;
   } else if (to === 'latest') {
     index = detailResult.value.chapterList.length - 1;
   }
   const chapter = detailResult.value.chapterList[index];
   if (!chapter) {
+    if (to === 'already') {
+      return;
+    }
     message.error(`无法获取章节信息`);
     GLOBAL_LOG.error(
       'detail: to onReady',
