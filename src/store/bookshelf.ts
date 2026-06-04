@@ -28,6 +28,7 @@ export type Book = {
   pluginVersionCode: number,
   baseUrl: string,
   group: string,
+  bookgroup: string,
   pluginName: string
 }
 export type BookRefresh = {
@@ -71,7 +72,15 @@ export const useBookshelfStore = defineStore('Bookshelf', {
   state: () => {
     return {
       _books: new Map<string, BookRefresh>(),
+      _bookRefs: new Map<string, {
+        id: string,
+        pid: string,
+        detailPageUrl: string
+      }>(),
       currentPage: 1,
+      total: 0,
+      pageSize: 12,
+      bookgroups: <string[]>[],
       refreshed: false
     }
   },
@@ -82,6 +91,66 @@ export const useBookshelfStore = defineStore('Bookshelf', {
     },
   },
   actions: {
+    setBookRef(id: string, pid: string, detailPageUrl: string) {
+      this._bookRefs.set(`${pid}|${detailPageUrl}`, {
+        id,
+        pid,
+        detailPageUrl
+      });
+    },
+    toBookRefresh(entity: Omit<BookshelfStoreEntity, 'intro' | 'chapterList'> & {
+      readChapterTitle?: string
+    }): BookRefresh {
+      const props = GLOBAL_PLUGINS.getPluginPropsById(entity.pid);
+      return {
+        id: entity.id,
+        pid: entity.pid,
+        detailPageUrl: entity.detailPageUrl,
+        bookname: entity.bookname,
+        author: entity.author,
+        coverImageUrl: entity.coverImageUrl,
+        latestChapterTitle: entity.latestChapterTitle,
+        searchIndex: entity.searchIndex,
+        readIndex: entity.readIndex,
+        readChapterTitle: entity.readChapterTitle || '',
+        timestamp: entity.timestamp,
+        pluginVersionCode: entity.pluginVersionCode,
+        isRunningRefresh: false,
+        isRunningExport: false,
+        error: void 0,
+        baseUrl: entity.baseUrl,
+        bookgroup: entity.bookgroup || '未分类',
+        group: entity.pid === BookParser.PID ? '内置' : props?.GROUP || 'unknown',
+        pluginName: entity.pid === BookParser.PID ? '本地书籍' : props?.NAME || 'unknown'
+      };
+    },
+    async loadPage(bookgroup: string, searchKey: string, page?: number, pageSize?: number) {
+      try {
+        const nextPage = page || this.currentPage;
+        const nextPageSize = pageSize || this.pageSize;
+        const res = await GLOBAL_DB.store.bookshelfStore.getPage(bookgroup, searchKey, nextPage, nextPageSize);
+        this.pageSize = nextPageSize;
+        this.total = res.total;
+        this.currentPage = nextPage;
+        this._books.clear();
+        res.values.forEach(entity => {
+          this.setBookRef(entity.id, entity.pid, entity.detailPageUrl);
+          this._books.set(entity.id, this.toBookRefresh(entity));
+        });
+      } catch (e: any) {
+        useMessage().error(e.message);
+        return errorHandler(e);
+      }
+    },
+    async loadBookgroups(defaultBookgroups: string[] = []) {
+      try {
+        const groups = await GLOBAL_DB.store.bookshelfStore.getBookgroups();
+        this.bookgroups = Array.from(new Set([...defaultBookgroups, ...groups]));
+      } catch (e: any) {
+        useMessage().error(e.message);
+        return errorHandler(e);
+      }
+    },
     async getBookshelfEntity(pid: string, detailPageUrl: string) {
       try {
         return await GLOBAL_DB.store.bookshelfStore.getByPidAndDetailPageUrl(pid, detailPageUrl);
@@ -91,9 +160,8 @@ export const useBookshelfStore = defineStore('Bookshelf', {
       }
     },
     exist(pid: string, detailPageUrl: string) {
-      return Array.from(this._books.values())
-        .findIndex(v => v.pid === pid && v.detailPageUrl === detailPageUrl)
-        >= 0;
+      return this._bookRefs.has(`${pid}|${detailPageUrl}`) ||
+        Array.from(this._books.values()).findIndex(v => v.pid === pid && v.detailPageUrl === detailPageUrl) >= 0;
     },
     async updateReadProgress(pid: string, detailPageUrl: string, progress: BookshelfReadProgress): Promise<void> {
       try {
@@ -139,7 +207,8 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           readIndex,
           timestamp,
           pluginVersionCode,
-          baseUrl
+          baseUrl,
+          bookgroup = '未分类'
         } = _entity;
         const props = GLOBAL_PLUGINS.getPluginPropsById(pid);
         let GROUP, NAME;
@@ -166,9 +235,11 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           pluginVersionCode,
           baseUrl,
           group: GROUP,
+          bookgroup,
           pluginName: NAME
         };
         await GLOBAL_DB.store.bookshelfStore.put(_entity);
+        this.setBookRef(id, pid, detailPageUrl);
         this._books.set(id, {
           isRunningRefresh: false,
           isRunningExport: false,
@@ -268,11 +339,64 @@ export const useBookshelfStore = defineStore('Bookshelf', {
         if (this._books.has(id)) {
           await GLOBAL_DB.store.bookshelfStore.remove(id);
           this._books.delete(id);
+          for (const [key, value] of this._bookRefs) {
+            if (value.id === id) {
+              this._bookRefs.delete(key);
+              break;
+            }
+          }
         }
       } catch (e: any) {
         useMessage().error(e.message);
         return errorHandler(e);
       }
+    },
+    async updateBookgroup(id: string, bookgroup: string): Promise<void> {
+      try {
+        const entity = this._books.get(id);
+        if (!entity) {
+          return;
+        }
+        const db = await GLOBAL_DB.store.bookshelfStore.getById(id);
+        if (isNull(db)) {
+          return;
+        }
+        const nextBookgroup = bookgroup.trim() || '未分类';
+        await GLOBAL_DB.store.bookshelfStore.put({
+          ...db,
+          bookgroup: nextBookgroup
+        });
+        this._books.set(id, {
+          ...entity,
+          bookgroup: nextBookgroup
+        });
+        if (!this.bookgroups.includes(nextBookgroup)) {
+          this.bookgroups.push(nextBookgroup);
+        }
+      } catch (e: any) {
+        useMessage().error(e.message);
+        return errorHandler(e);
+      }
+    },
+    async renameBookgroup(oldName: string, newName: string): Promise<void> {
+      const nextName = newName.trim();
+      if (!nextName || oldName === nextName) {
+        return;
+      }
+      await GLOBAL_DB.store.bookshelfStore.renameBookgroup(oldName, nextName);
+      for (const [id, book] of this._books) {
+        if (book.bookgroup === oldName) {
+          this._books.set(id, {
+            ...book,
+            bookgroup: nextName
+          });
+        }
+      }
+      this.bookgroups = this.bookgroups.map(item => item === oldName ? nextName : item);
+    },
+    async deleteBookgroup(name: string, fallback = '未分类'): Promise<void> {
+      await this.renameBookgroup(name, fallback);
+      this.bookgroups = this.bookgroups.filter(item => item !== name);
     },
     async removeByPidAndDetailUrl(pid: string, detailUrl: string): Promise<void> {
       try {
@@ -330,6 +454,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           searchIndex: db.searchIndex,
           timestamp: db.timestamp,
           baseUrl: db.baseUrl,
+          bookgroup: db.bookgroup,
           bookname: bookname.trim() || db.bookname,
           author: author.trim() || db.author,
           intro: intro?.trim() || db.intro,

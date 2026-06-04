@@ -53,6 +53,7 @@ export type BookshelfStoreEntity = {
   readScrollTop: number,
   searchIndex: string,
   timestamp: number,
+  bookgroup?: string,
 } & DetailEntity;
 export type TextContentStoreEntity = {
   id: string,

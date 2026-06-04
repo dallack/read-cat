@@ -10,13 +10,12 @@ import {
   ElSelect,
   ElOption,
   ElButtonGroup,
-  ElEmpty
+  ElEmpty,
+  ElMessageBox
 } from 'element-plus';
-import { onMounted } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useScrollTopStore } from '../../store/scrolltop';
 import { PagePath } from '../../core/window';
-import { usePagination } from './hooks/pagination';
-import { useRefresh } from './hooks/refresh';
 import IconSearch from '../../assets/svg/icon-search.svg';
 import IconUser from '../../assets/svg/icon-user.svg';
 import IconDot from '../../assets/svg/icon-dot.svg';
@@ -37,24 +36,62 @@ import { Window, FileDrag, CloseButton, Text } from '../../components';
 import { useTxtParseRuleStore } from '../../store/txt-parse-rules';
 import { TxtParserType } from '../../core/book/txt-parser';
 import { useMessage } from '../../hooks/message';
-import { useDefaultSearch } from '../../hooks/default-search';
 import { storeToRefs } from 'pinia';
 
 
 const router = useRouter();
 const bookshelf = useBookshelfStore();
-const { options } = useSettingsStore();
+const { books: showValue, total, currentPage, bookgroups } = storeToRefs(bookshelf);
+const settings = useSettingsStore();
+const { options } = settings;
 const { pageScrollTop } = useScrollTopStore();
 onMounted(() => {
   pageScrollTop(PagePath.BOOKSHELF);
 });
 
-const { refresh, refreshValues } = useRefresh();
-const { searchKey, searchResult } = useDefaultSearch(refreshValues);
-const { totalPage, currentPage, currentPageChange, showValue } = usePagination(searchResult);
+const BOOKGROUP_ALL = '全部';
+const BOOKGROUP_DEFAULT = '未分类';
+const DEFAULT_BOOKGROUPS = ['玄幻', '武侠'];
+const selected = ref(BOOKGROUP_ALL);
+const targetBookgroup = ref(DEFAULT_BOOKGROUPS[0]);
+const searchKey = ref('');
+const isAllBookgroup = (value: string) => value === BOOKGROUP_ALL;
+const isDefaultBookgroup = (value: string) => value === BOOKGROUP_DEFAULT;
+const isSystemBookgroup = (value: string) => isAllBookgroup(value) || isDefaultBookgroup(value);
+const navItem = computed(() => {
+  const groups = new Set<string>([
+    ...DEFAULT_BOOKGROUPS,
+    ...settings.bookShelf.customBookgroups,
+    ...bookgroups.value
+  ]);
+  settings.bookShelf.deletedBookgroups.forEach(item => groups.delete(item));
+  groups.delete(BOOKGROUP_DEFAULT);
+  return [BOOKGROUP_ALL, BOOKGROUP_DEFAULT, ...Array.from(groups)];
+});
+const moveBookgroups = computed(() => navItem.value.filter(item => !isAllBookgroup(item)));
+const totalPage = computed(() => Math.ceil(total.value / bookshelf.pageSize));
+const currentBookgroupQuery = computed(() => isAllBookgroup(selected.value) ? '' : selected.value);
+const loadBookshelfPage = (page = currentPage.value) => {
+  return bookshelf.loadPage(currentBookgroupQuery.value, searchKey.value, page);
+}
+const currentPageChange = (page: number) => {
+  loadBookshelfPage(page);
+}
+const refresh = () => {
+  loadBookshelfPage(currentPage.value);
+}
 
 const { onRefresh } = useWindowStore();
 onRefresh(PagePath.BOOKSHELF, refresh);
+
+onMounted(() => {
+  bookshelf.loadBookgroups(DEFAULT_BOOKGROUPS);
+  loadBookshelfPage(1);
+});
+
+watch([selected, searchKey], () => {
+  loadBookshelfPage(1);
+});
 
 router.afterEach((to, from, fail) => {
   if (fail) return;
@@ -111,6 +148,111 @@ const {
 const { rules: txtParseRules } = storeToRefs(useTxtParseRuleStore());
 
 /** 导航至上次阅读章节或最新章节页*/
+const navItemClick = (key: string) => {
+  selected.value = key;
+}
+
+const normalizeBookgroup = (value: string) => value.trim() || BOOKGROUP_DEFAULT;
+const validateBookgroup = (value: string) => {
+  const bookgroup = normalizeBookgroup(value);
+  if (isAllBookgroup(bookgroup)) {
+    useMessage().warning('全部是总览分类，不能作为书籍分类');
+    return '';
+  }
+  return bookgroup;
+}
+
+const addBookgroup = () => {
+  ElMessageBox.prompt('请输入分类名称', '新增分类', {
+    inputValue: '',
+    inputPlaceholder: '例如：都市',
+    confirmButtonText: '确定',
+    cancelButtonText: '取消'
+  }).then(({ value }) => {
+    const bookgroup = validateBookgroup(value);
+    if (!bookgroup) {
+      return;
+    }
+    settings.bookShelf.deletedBookgroups = settings.bookShelf.deletedBookgroups.filter(item => item !== bookgroup);
+    if (!settings.bookShelf.customBookgroups.includes(bookgroup) && !navItem.value.includes(bookgroup)) {
+      settings.bookShelf.customBookgroups.push(bookgroup);
+    }
+    selected.value = bookgroup;
+    targetBookgroup.value = bookgroup;
+  }).catch(() => void 0);
+}
+
+const renameBookgroup = () => {
+  if (isSystemBookgroup(selected.value)) {
+    useMessage().warning('系统分类不能修改');
+    return;
+  }
+  ElMessageBox.prompt('请输入新的分类名称', '修改分类', {
+    inputValue: selected.value,
+    inputPlaceholder: '例如：仙侠',
+    confirmButtonText: '确定',
+    cancelButtonText: '取消'
+  }).then(async ({ value }) => {
+    const oldName = selected.value;
+    const bookgroup = validateBookgroup(value);
+    if (!bookgroup) {
+      return;
+    }
+    if (oldName === bookgroup) {
+      return;
+    }
+    await bookshelf.renameBookgroup(oldName, bookgroup);
+    await bookshelf.loadBookgroups(DEFAULT_BOOKGROUPS);
+    settings.bookShelf.customBookgroups = settings.bookShelf.customBookgroups.filter(item => item !== oldName);
+    settings.bookShelf.deletedBookgroups = settings.bookShelf.deletedBookgroups.filter(item => item !== bookgroup);
+    if (!settings.bookShelf.customBookgroups.includes(bookgroup) && !navItem.value.includes(bookgroup)) {
+      settings.bookShelf.customBookgroups.push(bookgroup);
+    }
+    selected.value = bookgroup;
+    targetBookgroup.value = bookgroup;
+  }).catch(() => void 0);
+}
+
+const deleteBookgroup = () => {
+  if (isSystemBookgroup(selected.value)) {
+    useMessage().warning('系统分类不能删除');
+    return;
+  }
+  const bookgroup = selected.value;
+  ElMessageBox.confirm(`是否删除分类「${bookgroup}」？该分类下的书籍会移动到「${BOOKGROUP_DEFAULT}」。`, '删除分类', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    await bookshelf.deleteBookgroup(bookgroup, BOOKGROUP_DEFAULT);
+    settings.bookShelf.customBookgroups = settings.bookShelf.customBookgroups.filter(item => item !== bookgroup);
+    if (!settings.bookShelf.deletedBookgroups.includes(bookgroup)) {
+      settings.bookShelf.deletedBookgroups.push(bookgroup);
+    }
+    selected.value = BOOKGROUP_DEFAULT;
+    targetBookgroup.value = BOOKGROUP_DEFAULT;
+    await bookshelf.loadBookgroups(DEFAULT_BOOKGROUPS);
+    await loadBookshelfPage(1);
+    useMessage().success(`已删除分类 ${bookgroup}`);
+  }).catch(() => void 0);
+}
+
+const moveCheckedToBookgroup = async () => {
+  if (!targetBookgroup.value) {
+    useMessage().warning('请选择目标分类');
+    return;
+  }
+  if (checkedCities.value.length < 1) {
+    useMessage().warning('请先选择书籍');
+    return;
+  }
+  await Promise.all(checkedCities.value.map(id => bookshelf.updateBookgroup(String(id), targetBookgroup.value)));
+  await bookshelf.loadBookgroups(DEFAULT_BOOKGROUPS);
+  await loadBookshelfPage(currentPage.value);
+  checkedCities.value = [];
+  useMessage().success(`已移动到 ${targetBookgroup.value}`);
+}
+
 const goReadPage = (e: MouseEvent, to: 'already' | 'latest', book: Book) => {
   e.stopPropagation();
   goDetailPage(book, to);
@@ -123,19 +265,31 @@ const exportTxt = (e: MouseEvent, book: Book) => {
 </script>
 
 <template>
-  <FileDrag class="container" tip="导入书籍" @change="fileDragChange" :disable="importBooksWindow?.isShow()">
+  <div class="container">
+    <nav id="bookstore-nav">
+      <main class="rc-scrollbar">
+        <ul>
+          <li :class="[
+            'rc-button',
+            item === selected ? 'nav-item-selected' : ''
+          ]" v-for="item of navItem" :key="item" @click="navItemClick(item)">
+            <Text ellipsis :title="item">{{ item }}</Text>
+          </li>
+        </ul>
+      </main>
+      <footer>
+        <ElButton size="small" @click="addBookgroup">新增</ElButton>
+        <ElButton size="small" :disabled="isSystemBookgroup(selected)" @click="renameBookgroup">修改</ElButton>
+        <ElButton size="small" type="danger" :disabled="isSystemBookgroup(selected)" @click="deleteBookgroup">删除</ElButton>
+      </footer>
+    </nav>
+    <FileDrag class="bookshelf-content" tip="导入书籍" @change="fileDragChange" :disable="importBooksWindow?.isShow()">
     <div class="bookshelf-container">
-      <div class="no-result" v-if="refreshValues.length < 1">
+      <div class="no-result" v-if="total < 1">
         <ElEmpty description="暂无书本">
           <ElButton type="primary" size="small" :icon="IconBack" @click="router.back()">返回</ElButton>
           <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
         </ElEmpty>
-        <!-- <ElResult icon="info" title="暂无书本">
-          <template #extra>
-            <ElButton type="primary" size="small" :icon="IconBack" @click="router.back()">返回</ElButton>
-            <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
-          </template>
-        </ElResult> -->
       </div>
       <div class="result" v-else>
         <div :class="['toolbar', options.enableBlur ? 'app-blur' : '']">
@@ -147,6 +301,10 @@ const exportTxt = (e: MouseEvent, book: Book) => {
           </div>
           <div class="right">
             <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
+            <ElSelect class="bookgroup-select" v-model="targetBookgroup" size="small" placeholder="目标分类">
+              <ElOption v-for="item of moveBookgroups" :key="item" :label="item" :value="item" />
+            </ElSelect>
+            <ElButton size="small" @click="moveCheckedToBookgroup">移到分类</ElButton>
             <ElButton type="danger" size="small" :icon="IconDelete" @click="removeBookshelf">移出</ElButton>
             <ElInput v-memo="[searchKey]" v-model="searchKey"  placeholder="请输入书名、作者"
               clearable>
@@ -204,8 +362,8 @@ const exportTxt = (e: MouseEvent, book: Book) => {
                     </template>
                   </div>
                   <!-- 导出当前书籍为 TXT，文件保存到数据目录的 download 文件夹 -->
-                 <!-- <ElButton class="export-txt" size="small" circle :icon="IconDownload"
-                    :loading="item.isRunningExport" title="下载" @click="e => exportTxt(e, item)" /> -->
+                 <ElButton class="export-txt" size="small" circle :icon="IconDownload"
+                    :loading="item.isRunningExport" title="下载" @click="e => exportTxt(e, item)" /> 
                   <ElCheckbox v-memo="[item.id]" :key="`checkbox-${item.id}`" :value="item.id"
                     @click="(e: MouseEvent) => e.stopPropagation()" />
                 </div>
@@ -312,7 +470,8 @@ const exportTxt = (e: MouseEvent, book: Book) => {
         </footer>
       </section>
     </Window>
-  </FileDrag>
+    </FileDrag>
+  </div>
 </template>
 <style lang="scss">
 .import-books-window {
@@ -543,6 +702,69 @@ const exportTxt = (e: MouseEvent, book: Book) => {
 }
 </style>
 <style scoped lang="scss">
+.container {
+  display: flex;
+  flex-direction: row;
+  height: calc(100% - 1rem);
+
+  #bookstore-nav {
+    display: flex;
+    flex-direction: column;
+    margin: 1rem;
+    padding: 1rem 0 1rem 1rem;
+    width: 19rem;
+    background-color: var(--rc-window-box-bgcolor);
+    border-radius: 10px;
+    box-shadow: var(--rc-shadow-light);
+    overflow: hidden;
+
+    main {
+      padding-right: 1rem;
+      width: calc(100% - 1rem);
+      height: calc(100% - 3.5rem);
+
+      ul li {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: start;
+        margin-bottom: .5rem;
+        padding: .5rem 1rem;
+        border-radius: .7rem;
+        font-size: 1.4rem;
+
+        &:active {
+          transform: scale(0.98);
+        }
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+
+        &:is(.nav-item-selected) {
+          background-color: var(--rc-button-hover-bgcolor);
+        }
+      }
+    }
+
+    footer {
+      display: flex;
+      gap: .5rem;
+      padding-right: 1rem;
+      height: 3rem;
+
+      .el-button {
+        flex: 1;
+      }
+    }
+  }
+
+  .bookshelf-content {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 .bookshelf-container {
   .app-blur {
     background-color: var(--rc-window-box-blur-bgcolor) !important;
@@ -595,6 +817,11 @@ const exportTxt = (e: MouseEvent, book: Book) => {
       display: flex;
       align-items: center;
 
+      .bookgroup-select {
+        margin-left: 10px;
+        width: 110px;
+      }
+
       :deep(.el-input) {
         margin-left: 15px;
         background-color: rgba(127, 127, 127, 0.1);
@@ -619,7 +846,8 @@ const exportTxt = (e: MouseEvent, book: Book) => {
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    justify-content: center;
+    // justify-content: center;
+    margin-left: 15px;
     margin-top: 15px;
     font-size: 14px;
 
@@ -634,7 +862,7 @@ const exportTxt = (e: MouseEvent, book: Book) => {
         justify-content: space-between;
         padding: 0;
 
-        width: 300px;
+        width: 270px;
       }
 
       &:hover .cover img {

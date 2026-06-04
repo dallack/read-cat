@@ -96,6 +96,10 @@ export const useSettingsStore = defineStore('Settings', {
       debug: Core.isDev,
       bookStore: {
         use: ''
+      },
+      bookShelf: {
+        customBookgroups: [],
+        deletedBookgroups: []
       }
     }
   },

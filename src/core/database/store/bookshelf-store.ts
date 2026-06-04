@@ -3,13 +3,17 @@ import { isNull, isUndefined } from '../../is';
 import { BookshelfStoreEntity } from '../database';
 import { BaseStoreDatabase } from './base-store';
 import { useMessage } from '../../../hooks/message';
-import { BookParser } from '../../book/book-parser';
 import { JsonFileDatabase } from '../json-file-database';
 
 type BookshelfStoreSummary = Omit<BookshelfStoreEntity, 'intro' | 'chapterList'> & {
   readChapterTitle?: string
   chapterCount: number
   metaSignature: string
+};
+
+export type BookshelfStorePage = {
+  total: number
+  values: BookshelfStoreSummary[]
 };
 
 export type BookshelfReadProgress = {
@@ -31,40 +35,7 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
         return;
       }
       res.forEach((entity) => {
-        const {
-          id,
-          pid,
-          detailPageUrl,
-          bookname,
-          author,
-          coverImageUrl,
-          latestChapterTitle,
-          searchIndex,
-          readIndex,
-          readChapterTitle,
-          timestamp,
-          pluginVersionCode,
-          baseUrl
-        } = entity;
-        const props = GLOBAL_PLUGINS.getPluginPropsById(pid);
-        store._books.set(id, {
-          id,
-          pid,
-          detailPageUrl,
-          bookname,
-          author,
-          coverImageUrl,
-          latestChapterTitle,
-          searchIndex,
-          readIndex,
-          readChapterTitle: readChapterTitle || '',
-          timestamp,
-          pluginVersionCode,
-          isRunningRefresh: false,
-          baseUrl,
-          group: pid === BookParser.PID ? '鍐呯疆' : props?.GROUP || 'unknown',
-          pluginName: pid === BookParser.PID ? '鏈湴涔︾睄' : props?.NAME || 'unknown'
-        });
+        store.setBookRef(entity.id, entity.pid, entity.detailPageUrl);
       });
     }).catch((e: any) => {
       GLOBAL_LOG.error(this.tag, 'read', e);
@@ -82,6 +53,49 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
     }
     const entities = await Promise.all(summaries.map(summary => this.hydrate(summary)));
     return entities.filter((entity): entity is BookshelfStoreEntity => !isNull(entity));
+  }
+  async getPage(bookgroup: string, searchKey: string, page: number, pageSize: number): Promise<BookshelfStorePage> {
+    const summaries = await this.getAllSummaries();
+    const key = searchKey.trim().toLowerCase();
+    const filtered = (summaries || []).filter(entity => {
+      if (bookgroup && (entity.bookgroup || '未分类') !== bookgroup) {
+        return false;
+      }
+      if (!key) {
+        return true;
+      }
+      return entity.searchIndex.toLowerCase().includes(key);
+    }).sort((a, b) => b.timestamp - a.timestamp);
+    const start = (Math.max(page, 1) - 1) * pageSize;
+    return {
+      total: filtered.length,
+      values: filtered.slice(start, start + pageSize)
+    };
+  }
+  async getBookgroups(): Promise<string[]> {
+    const summaries = await this.getAllSummaries();
+    const groups = new Set<string>();
+    (summaries || []).forEach(entity => groups.add(entity.bookgroup || '未分类'));
+    return Array.from(groups);
+  }
+  async renameBookgroup(oldName: string, newName: string): Promise<void> {
+    const summaries = await this.getAllSummaries();
+    for (const summary of summaries || []) {
+      if ((summary.bookgroup || '未分类') !== oldName) {
+        continue;
+      }
+      await super.put({
+        ...summary,
+        bookgroup: newName
+      } as unknown as BookshelfStoreEntity);
+      const meta = await this.db.getBookMeta(summary.pid, summary.detailPageUrl);
+      if (!isNull(meta)) {
+        await this.db.putBookMeta({
+          ...meta,
+          bookgroup: newName
+        });
+      }
+    }
   }
   getByPidAndDetailPageUrl(pid: string, detailPageUrl: string): Promise<BookshelfStoreEntity | null> {
     return this.getSummaryByPidAndDetailPageUrl(pid, detailPageUrl).then(summary => {
@@ -169,6 +183,7 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
       readScrollTop: entity.readScrollTop,
       searchIndex: entity.searchIndex,
       timestamp: entity.timestamp,
+      bookgroup: entity.bookgroup || '未分类',
       bookname: entity.bookname,
       author: entity.author,
       coverImageUrl: entity.coverImageUrl,
