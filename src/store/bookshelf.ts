@@ -6,10 +6,10 @@ import { isNull, isUndefined } from '../core/is';
 import { useSettingsStore } from './settings';
 import { BookSource } from '../core/plugins/defined/booksource';
 import { BookParser } from '../core/book/book-parser';
+import { Chapter } from '../core/book/book';
 import type { BookshelfReadProgress } from '../core/database/store/bookshelf-store';
 import { Core } from '../core';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
 import { join } from 'path';
 import { nanoid } from 'nanoid';
 
@@ -33,8 +33,16 @@ export type Book = {
 export type BookRefresh = {
   isRunningRefresh: boolean,
   isRunningExport?: boolean,
+  exportProgress?: {
+    current: number,
+    total: number
+  },
   error?: string,
 } & Book;
+
+type ExportChapterResult = {
+  lines: string[]
+};
 
 const sanitizeFilename = (value: string) => {
   return value
@@ -58,13 +66,51 @@ const stripHTML = (value: string) => {
     .trim();
 }
 
-const getWritableTxtPath = (dir: string, filename: string) => {
+const getWritableTxtFileHandle = async (dir: string, filename: string) => {
   let filepath = join(dir, `${filename}.txt`);
   let index = 1;
-  while (existsSync(filepath)) {
-    filepath = join(dir, `${filename}-(${index++}).txt`);
+  while (true) {
+    try {
+      return {
+        filepath,
+        handle: await fs.open(filepath, 'wx')
+      };
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') {
+        throw e;
+      }
+      filepath = join(dir, `${filename}-(${index++}).txt`);
+    }
   }
-  return filepath;
+}
+
+const buildChapterExport = async (
+  book: BookshelfStoreEntity,
+  chapter: Chapter,
+  booksource: BookSource | null
+): Promise<ExportChapterResult> => {
+  let content = await GLOBAL_DB.store.textContentStore.getByPidAndChapterUrl(book.pid, chapter.url);
+  if (isNull(content) && booksource) {
+    const textContent = await booksource.getTextContent(chapter);
+    content = {
+      id: nanoid(),
+      pid: book.pid,
+      detailUrl: book.detailPageUrl,
+      chapter,
+      textContent
+    } as TextContentStoreEntity;
+    await GLOBAL_DB.store.textContentStore.put(content);
+  }
+  if (isNull(content)) {
+    throw newError(`章节内容为空: ${chapter.title}`);
+  }
+  return {
+    lines: [
+      chapter.title,
+      ...content.textContent.map(stripHTML).filter(v => v),
+      ''
+    ]
+  };
 }
 
 export const useBookshelfStore = defineStore('Bookshelf', {
@@ -188,6 +234,8 @@ export const useBookshelfStore = defineStore('Bookshelf', {
       }
       const loading = message.loading(`正在导出《${entity.bookname}》`);
       entity.isRunningExport = true;
+      entity.exportProgress = void 0;
+      let file: Awaited<ReturnType<typeof getWritableTxtFileHandle>> | undefined;
       try {
         if (!Core.dataPath) {
           throw newError('dataPath is undefined');
@@ -211,55 +259,58 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           booksource = plugin.instance;
         }
 
-        const lines: string[] = [
+        const downloadDir = join(Core.dataPath, 'download');
+        await fs.mkdir(downloadDir, { recursive: true });
+        file = await getWritableTxtFileHandle(downloadDir, sanitizeFilename(book.bookname));
+        await file.handle.writeFile(`${[
           book.bookname,
           book.author ? `作者：${book.author}` : '',
           ''
-        ];
+        ].join('\n')}\n`, { encoding: 'utf-8' });
+
+        const threadsNumber = Math.max(1, useSettingsStore().threadsNumber || 1);
+        const chapterGroups = chunkArray(book.chapterList, threadsNumber);
         let errorCount = 0;
-        for (const chapter of book.chapterList) {
-          try {
-            let content = await GLOBAL_DB.store.textContentStore.getByPidAndChapterUrl(book.pid, chapter.url);
-            if (isNull(content) && booksource) {
-              const textContent = await booksource.getTextContent(chapter);
-              content = {
-                id: nanoid(),
-                pid: book.pid,
-                detailUrl: book.detailPageUrl,
-                chapter,
-                textContent
-              } as TextContentStoreEntity;
-              await GLOBAL_DB.store.textContentStore.put(content);
-            }
-            if (isNull(content)) {
+        let exportedCount = 0;
+        entity.exportProgress = {
+          current: 0,
+          total: book.chapterList.length
+        };
+
+        for (const chapterGroup of chapterGroups) {
+          const results = await Promise.allSettled(
+            chapterGroup.map(chapter => buildChapterExport(book, chapter, booksource))
+          );
+          for (let i = 0; i < results.length; i++) {
+            const result = results[i];
+            const chapter = chapterGroup[i];
+            if (result.status === 'rejected') {
               errorCount++;
-              continue;
+              GLOBAL_LOG.error('Bookshelf exportTxt chapter', `bookId:${id}`, chapter, result.reason);
+            } else {
+              await file.handle.writeFile(`${result.value.lines.join('\n')}\n`, { encoding: 'utf-8' });
             }
-            lines.push(chapter.title);
-            lines.push(...content.textContent.map(stripHTML).filter(v => v));
-            lines.push('');
-          } catch (e) {
-            errorCount++;
-            GLOBAL_LOG.error('Bookshelf exportTxt chapter', `bookId:${id}`, chapter, e);
+            exportedCount++;
+            entity.exportProgress = {
+              current: exportedCount,
+              total: book.chapterList.length
+            };
           }
         }
-
-        const downloadDir = join(Core.dataPath, 'download');
-        await fs.mkdir(downloadDir, { recursive: true });
-        const filepath = getWritableTxtPath(downloadDir, sanitizeFilename(book.bookname));
-        await fs.writeFile(filepath, `${lines.join('\n')}\n`, { encoding: 'utf-8' });
         if (errorCount > 0) {
-          message.warning(`导出完成，${errorCount} 个章节导出失败：${filepath}`);
+          message.warning(`导出完成，${errorCount} 个章节导出失败：${file.filepath}`);
         } else {
-          message.success(`导出完成：${filepath}`);
+          message.success(`导出完成：${file.filepath}`);
         }
-        return filepath;
+        return file.filepath;
       } catch (e: any) {
         message.error(e.message);
         GLOBAL_LOG.error(`Bookshelf exportTxt bookId:${id}`, e);
         return errorHandler(e);
       } finally {
+        await file?.handle.close().catch(() => void 0);
         entity.isRunningExport = false;
+        entity.exportProgress = void 0;
         loading.close();
       }
     },

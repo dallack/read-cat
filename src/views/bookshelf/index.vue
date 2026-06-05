@@ -12,7 +12,7 @@ import {
   ElButtonGroup,
   ElEmpty
 } from 'element-plus';
-import { onMounted } from 'vue';
+import { onMounted, onUnmounted } from 'vue';
 import { useScrollTopStore } from '../../store/scrolltop';
 import { PagePath } from '../../core/window';
 import { usePagination } from './hooks/pagination';
@@ -56,7 +56,7 @@ const { totalPage, currentPage, currentPageChange, showValue } = usePagination(s
 const { onRefresh } = useWindowStore();
 onRefresh(PagePath.BOOKSHELF, refresh);
 
-router.afterEach((to, from, fail) => {
+const removeRouterAfterEach = router.afterEach((to, from, fail) => {
   if (fail) return;
   /**
    * 解决在详情页点击已读章节标题跳转至已读章节阅读页后点击回退按钮无法正常回退的问题
@@ -65,6 +65,7 @@ router.afterEach((to, from, fail) => {
     to.query.to = 'normal';
   }
 });
+onUnmounted(removeRouterAfterEach);
 
 /**
  * @param to
@@ -130,12 +131,6 @@ const exportTxt = (e: MouseEvent, book: Book) => {
           <ElButton type="primary" size="small" :icon="IconBack" @click="router.back()">返回</ElButton>
           <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
         </ElEmpty>
-        <!-- <ElResult icon="info" title="暂无书本">
-          <template #extra>
-            <ElButton type="primary" size="small" :icon="IconBack" @click="router.back()">返回</ElButton>
-            <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
-          </template>
-        </ElResult> -->
       </div>
       <div class="result" v-else>
         <div :class="['toolbar', options.enableBlur ? 'app-blur' : '']">
@@ -204,8 +199,10 @@ const exportTxt = (e: MouseEvent, book: Book) => {
                     </template>
                   </div>
                   <!-- 导出当前书籍为 TXT，文件保存到数据目录的 download 文件夹 -->
-                 <!-- <ElButton class="export-txt" size="small" circle :icon="IconDownload"
-                    :loading="item.isRunningExport" title="下载" @click="e => exportTxt(e, item)" /> -->
+                  <ElButton class="export-txt" size="small" circle :icon="IconDownload"
+                    :loading="item.isRunningExport"
+                    :title="item.exportProgress ? `下载 ${item.exportProgress.current}/${item.exportProgress.total}` : '下载'"
+                    @click="e => exportTxt(e, item)" /> 
                   <ElCheckbox v-memo="[item.id]" :key="`checkbox-${item.id}`" :value="item.id"
                     @click="(e: MouseEvent) => e.stopPropagation()" />
                 </div>
