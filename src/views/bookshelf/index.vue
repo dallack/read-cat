@@ -55,6 +55,7 @@ const DEFAULT_BOOKGROUPS = ['玄幻', '武侠'];
 const selected = ref(BOOKGROUP_ALL);
 const targetBookgroup = ref(DEFAULT_BOOKGROUPS[0]);
 const searchKey = ref('');
+const bookgroupNavCollapsed = ref(false);
 const isAllBookgroup = (value: string) => value === BOOKGROUP_ALL;
 const isDefaultBookgroup = (value: string) => value === BOOKGROUP_DEFAULT;
 const isSystemBookgroup = (value: string) => isAllBookgroup(value) || isDefaultBookgroup(value);
@@ -269,8 +270,13 @@ const exportTxt = (e: MouseEvent, book: Book) => {
 
 <template>
   <div class="container">
-    <nav id="bookstore-nav">
-      <main class="rc-scrollbar">
+    <nav id="bookstore-nav" :class="{ collapsed: bookgroupNavCollapsed }">
+      <header>
+        <ElButton size="small" text @click="bookgroupNavCollapsed = !bookgroupNavCollapsed">
+          {{ bookgroupNavCollapsed ? '展开' : '收起' }}
+        </ElButton>
+      </header>
+      <main v-show="!bookgroupNavCollapsed" class="rc-scrollbar">
         <ul>
           <li :class="[
             'rc-button',
@@ -280,7 +286,7 @@ const exportTxt = (e: MouseEvent, book: Book) => {
           </li>
         </ul>
       </main>
-      <footer>
+      <footer v-show="!bookgroupNavCollapsed">
         <ElButton size="small" @click="addBookgroup">新增</ElButton>
         <ElButton size="small" :disabled="isSystemBookgroup(selected)" @click="renameBookgroup">修改</ElButton>
         <ElButton size="small" type="danger" :disabled="isSystemBookgroup(selected)" @click="deleteBookgroup">删除</ElButton>
@@ -720,11 +726,38 @@ const exportTxt = (e: MouseEvent, book: Book) => {
     border-radius: 10px;
     box-shadow: var(--rc-shadow-light);
     overflow: hidden;
+    transition: width .2s ease, padding .2s ease;
+
+    header {
+      display: flex;
+      justify-content: flex-end;
+      padding-right: 1rem;
+      height: 2.8rem;
+    }
+
+    &.collapsed {
+      align-items: center;
+      padding: 1rem 0;
+      width: 4.2rem;
+
+      header {
+        justify-content: center;
+        padding-right: 0;
+        height: auto;
+
+        .el-button {
+          padding: .5rem 0;
+          width: 2.8rem;
+          white-space: normal;
+          line-height: 1.2;
+        }
+      }
+    }
 
     main {
       padding-right: 1rem;
       width: calc(100% - 1rem);
-      height: calc(100% - 3.5rem);
+      height: calc(100% - 6.3rem);
 
       ul li {
         display: flex;
