@@ -12,7 +12,7 @@ import {
   ElButtonGroup,
   ElEmpty
 } from 'element-plus';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useScrollTopStore } from '../../store/scrolltop';
 import { PagePath } from '../../core/window';
 import { usePagination } from './hooks/pagination';
@@ -34,6 +34,7 @@ import { useWindowStore } from '../../store/window';
 import { useBookshelfCheckbox } from './hooks/bookshelf-checkbox';
 import { useImportBooks } from './hooks/import-books';
 import { Window, FileDrag, CloseButton, Text } from '../../components';
+import type { WindowEvent } from '../../components/window/index.vue';
 import { useTxtParseRuleStore } from '../../store/txt-parse-rules';
 import { TxtParserType } from '../../core/book/txt-parser';
 import { useMessage } from '../../hooks/message';
@@ -43,7 +44,8 @@ import { storeToRefs } from 'pinia';
 
 const router = useRouter();
 const bookshelf = useBookshelfStore();
-const { options } = useSettingsStore();
+const settings = useSettingsStore();
+const { options } = settings;
 const { pageScrollTop } = useScrollTopStore();
 onMounted(() => {
   pageScrollTop(PagePath.BOOKSHELF);
@@ -51,19 +53,28 @@ onMounted(() => {
 
 const { refresh, refreshValues } = useRefresh();
 const { searchKey, searchResult } = useDefaultSearch(refreshValues);
+const CATEGORY_ALL = '\u5168\u90e8';
 const showCategoryNav = ref(false);
-const selectedCategory = ref('全部');
+const selectedCategory = ref(CATEGORY_ALL);
+const categoryManagerWindow = ref<WindowEvent>();
+const newCategoryName = ref('');
+const activeManageCategory = ref('');
+const editingCategory = ref('');
+const editingCategoryName = ref('');
 const navItem = computed(() => {
-  const categories = refreshValues.value.map(item => `${item.group}-${item.pluginName}`);
-  return ['全部', ...Array.from(new Set(categories))];
+  return [CATEGORY_ALL, ...settings.bookShelf.categories];
 });
 const categoryResult = computed(() => {
-  if (selectedCategory.value === '全部') {
+  if (selectedCategory.value === CATEGORY_ALL) {
     return searchResult.value;
   }
-  return searchResult.value.filter(item => `${item.group}-${item.pluginName}` === selectedCategory.value);
+  return searchResult.value.filter(item => settings.bookShelf.bookCategories[item.id] === selectedCategory.value);
 });
 const { totalPage, currentPage, currentPageChange, showValue } = usePagination(categoryResult);
+const manageBookList = computed(() => refreshValues.value);
+const getCategoryBookCount = (category: string) => {
+  return refreshValues.value.filter(item => settings.bookShelf.bookCategories[item.id] === category).length;
+}
 
 const toggleCategoryNav = () => {
   showCategoryNav.value = !showCategoryNav.value;
@@ -72,6 +83,107 @@ const toggleCategoryNav = () => {
 const navItemClick = (item: string) => {
   selectedCategory.value = item;
 }
+
+const openCategoryManager = () => {
+  activeManageCategory.value = settings.bookShelf.categories[0] || '';
+  editingCategory.value = '';
+  editingCategoryName.value = '';
+  categoryManagerWindow.value?.show();
+}
+
+const addCategory = () => {
+  const name = newCategoryName.value.trim();
+  if (!name || settings.bookShelf.categories.includes(name) || name === CATEGORY_ALL) {
+    return;
+  }
+  settings.bookShelf.categories.push(name);
+  activeManageCategory.value = name;
+  newCategoryName.value = '';
+}
+
+const startEditCategory = (category: string) => {
+  editingCategory.value = category;
+  editingCategoryName.value = category;
+}
+
+const saveEditCategory = () => {
+  const oldName = editingCategory.value;
+  const newName = editingCategoryName.value.trim();
+  if (!oldName || !newName || (newName !== oldName && settings.bookShelf.categories.includes(newName)) || newName === CATEGORY_ALL) {
+    return;
+  }
+  const index = settings.bookShelf.categories.indexOf(oldName);
+  if (index < 0) {
+    return;
+  }
+  settings.bookShelf.categories[index] = newName;
+  Object.keys(settings.bookShelf.bookCategories).forEach(id => {
+    if (settings.bookShelf.bookCategories[id] === oldName) {
+      settings.bookShelf.bookCategories[id] = newName;
+    }
+  });
+  if (selectedCategory.value === oldName) {
+    selectedCategory.value = newName;
+  }
+  if (activeManageCategory.value === oldName) {
+    activeManageCategory.value = newName;
+  }
+  editingCategory.value = '';
+  editingCategoryName.value = '';
+}
+
+const removeCategory = (category: string) => {
+  const index = settings.bookShelf.categories.indexOf(category);
+  if (index < 0) {
+    return;
+  }
+  settings.bookShelf.categories.splice(index, 1);
+  Object.keys(settings.bookShelf.bookCategories).forEach(id => {
+    if (settings.bookShelf.bookCategories[id] === category) {
+      delete settings.bookShelf.bookCategories[id];
+    }
+  });
+  if (selectedCategory.value === category) {
+    selectedCategory.value = CATEGORY_ALL;
+  }
+  activeManageCategory.value = settings.bookShelf.categories[Math.min(index, settings.bookShelf.categories.length - 1)] || '';
+}
+
+const moveCategory = (category: string, step: -1 | 1) => {
+  const index = settings.bookShelf.categories.indexOf(category);
+  const target = index + step;
+  if (index < 0 || target < 0 || target >= settings.bookShelf.categories.length) {
+    return;
+  }
+  const list = settings.bookShelf.categories;
+  [list[index], list[target]] = [list[target], list[index]];
+}
+
+const bookInActiveCategory = (bookId: string) => {
+  return !!activeManageCategory.value && settings.bookShelf.bookCategories[bookId] === activeManageCategory.value;
+}
+
+const setBookCategory = (bookId: string, checked: boolean) => {
+  if (!activeManageCategory.value) {
+    return;
+  }
+  if (checked) {
+    settings.bookShelf.bookCategories[bookId] = activeManageCategory.value;
+    return;
+  }
+  if (settings.bookShelf.bookCategories[bookId] === activeManageCategory.value) {
+    delete settings.bookShelf.bookCategories[bookId];
+  }
+}
+
+watch(() => settings.bookShelf.categories, categories => {
+  if (selectedCategory.value !== CATEGORY_ALL && !categories.includes(selectedCategory.value)) {
+    selectedCategory.value = CATEGORY_ALL;
+  }
+  if (activeManageCategory.value && !categories.includes(activeManageCategory.value)) {
+    activeManageCategory.value = categories[0] || '';
+  }
+}, { deep: true });
 
 const { onRefresh } = useWindowStore();
 onRefresh(PagePath.BOOKSHELF, refresh);
@@ -156,6 +268,9 @@ const exportTxt = (e: MouseEvent, book: Book) => {
         <nav id="bookstore-nav" v-show="showCategoryNav">
           <main class="rc-scrollbar">
             <ul>
+              <li class="rc-button nav-manage" @click="openCategoryManager">
+                <Text ellipsis title="分类管理">分类管理</Text>
+              </li>
               <li :class="[
                 'rc-button',
                 item === selectedCategory ? 'nav-item-selected' : ''
@@ -340,6 +455,58 @@ const exportTxt = (e: MouseEvent, book: Book) => {
           <ElPagination layout="prev, pager, next" :current-page="importBookCurrentPage" :page-count="books.length"
             @current-change="importBookCurrentChange" hide-on-single-page />
         </footer>
+      </section>
+    </Window>
+    <Window center-x center-y width="720" height="520" :click-hide="false" @event="e => categoryManagerWindow = e"
+      class-name="category-manager-window">
+      <section class="category-manager">
+        <header>
+          <strong>分类管理</strong>
+          <CloseButton @click="categoryManagerWindow?.hide()" />
+        </header>
+        <main>
+          <aside>
+            <div class="category-add">
+              <ElInput v-model="newCategoryName" size="small" placeholder="新增分类" @keyup.enter="addCategory" />
+              <ElButton type="primary" size="small" @click="addCategory">新增</ElButton>
+            </div>
+            <ul class="category-list rc-scrollbar">
+              <li v-for="(category, index) of settings.bookShelf.categories" :key="category"
+                :class="[category === activeManageCategory ? 'active' : '']" @click="activeManageCategory = category">
+                <template v-if="editingCategory === category">
+                  <ElInput v-model="editingCategoryName" size="small" @keyup.enter="saveEditCategory" />
+                  <ElButton size="small" type="primary" @click="saveEditCategory">保存</ElButton>
+                </template>
+                <template v-else>
+                  <Text ellipsis :title="category">{{ category }}（{{ getCategoryBookCount(category) }}）</Text>
+                  <div class="category-actions">
+                    <ElButton size="small" :disabled="index === 0" @click.stop="moveCategory(category, -1)">上移</ElButton>
+                    <ElButton size="small" :disabled="index === settings.bookShelf.categories.length - 1"
+                      @click.stop="moveCategory(category, 1)">下移</ElButton>
+                    <ElButton size="small" @click.stop="startEditCategory(category)">修改</ElButton>
+                    <ElButton size="small" type="danger" @click.stop="removeCategory(category)">删除</ElButton>
+                  </div>
+                </template>
+              </li>
+            </ul>
+          </aside>
+          <section>
+            <div class="book-assign-title">
+              <Text ellipsis :title="activeManageCategory">{{ activeManageCategory || '请选择分类' }}</Text>
+            </div>
+            <ul class="book-assign-list rc-scrollbar">
+              <li v-for="item of manageBookList" :key="item.id">
+                <ElCheckbox :disabled="!activeManageCategory" :model-value="bookInActiveCategory(item.id)"
+                  @change="checked => setBookCategory(item.id, Boolean(checked))" />
+                <img :src="item.coverImageUrl" @error="e => (<HTMLImageElement>e.target).src = CoverImage" />
+                <div>
+                  <Text ellipsis :title="item.bookname">{{ item.bookname }}</Text>
+                  <Text ellipsis :title="item.author">{{ item.author }}</Text>
+                </div>
+              </li>
+            </ul>
+          </section>
+        </main>
       </section>
     </Window>
   </FileDrag>
@@ -571,6 +738,143 @@ const exportTxt = (e: MouseEvent, book: Book) => {
     font-size: 13px;
   }
 }
+
+.category-manager-window {
+  .category-manager {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--rc-text-color);
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      height: 24px;
+      border-bottom: 1px solid rgba(127, 127, 127, 0.16);
+
+      strong {
+        font-size: 15px;
+      }
+    }
+
+    main {
+      display: flex;
+      height: calc(100% - 49px);
+      min-height: 0;
+
+      aside {
+        display: flex;
+        flex-direction: column;
+        width: 320px;
+        border-right: 1px solid rgba(127, 127, 127, 0.16);
+      }
+
+      section {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        flex-direction: column;
+      }
+    }
+
+    .category-add {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+
+      .el-input {
+        flex: 1;
+      }
+    }
+
+    .category-list {
+      flex: 1;
+      min-height: 0;
+      padding: 0 10px 10px;
+
+      li {
+        padding: 8px;
+        border-radius: 8px;
+        background-color: var(--rc-list-item-bgcolor);
+        cursor: pointer;
+
+        &+li {
+          margin-top: 8px;
+        }
+
+        &.active {
+          background-color: var(--rc-button-hover-bgcolor);
+        }
+
+        .el-input {
+          margin-bottom: 6px;
+        }
+      }
+    }
+
+    .category-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+
+      .el-button {
+        margin-left: 0;
+      }
+    }
+
+    .book-assign-title {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      height: 24px;
+      font-size: 14px;
+      font-weight: bold;
+      border-bottom: 1px solid rgba(127, 127, 127, 0.16);
+    }
+
+    .book-assign-list {
+      flex: 1;
+      min-height: 0;
+      padding: 10px;
+
+      li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px;
+        border-radius: 8px;
+
+        &:hover {
+          background-color: var(--rc-button-hover-bgcolor);
+        }
+
+        img {
+          flex: 0 0 34px;
+          width: 34px;
+          height: 44px;
+          object-fit: cover;
+          border-radius: 4px;
+        }
+
+        div {
+          display: flex;
+          min-width: 0;
+          flex-direction: column;
+          font-size: 13px;
+
+          span:last-child {
+            margin-top: 3px;
+            opacity: 0.75;
+            font-size: 12px;
+          }
+        }
+      }
+    }
+  }
+}
 </style>
 <style scoped lang="scss">
 .bookshelf-container {
@@ -621,6 +925,13 @@ const exportTxt = (e: MouseEvent, book: Book) => {
 
           &:is(.nav-item-selected) {
             background-color: var(--rc-button-hover-bgcolor);
+          }
+
+          &:is(.nav-manage) {
+            margin-bottom: 8px;
+            border-bottom: 1px solid rgba(127, 127, 127, 0.16);
+            border-radius: 8px 8px 0 0;
+            color: var(--rc-theme-color);
           }
         }
       }

@@ -134,6 +134,10 @@ export type BookStoreConfig = {
   /**正在使用的书城插件ID */
   use: string
 }
+export type BookShelfConfig = {
+  categories: string[]
+  bookCategories: Record<string, string>
+}
 export type Settings = {
   /**设置配置ID */
   id: string
@@ -167,4 +171,5 @@ export type Settings = {
   debug: boolean,
   /**书城配置 */
   bookStore: BookStoreConfig
+  bookShelf: BookShelfConfig
 }
