@@ -12,7 +12,7 @@ import {
   ElButtonGroup,
   ElEmpty
 } from 'element-plus';
-import { onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useScrollTopStore } from '../../store/scrolltop';
 import { PagePath } from '../../core/window';
 import { usePagination } from './hooks/pagination';
@@ -51,7 +51,27 @@ onMounted(() => {
 
 const { refresh, refreshValues } = useRefresh();
 const { searchKey, searchResult } = useDefaultSearch(refreshValues);
-const { totalPage, currentPage, currentPageChange, showValue } = usePagination(searchResult);
+const showCategoryNav = ref(false);
+const selectedCategory = ref('全部');
+const navItem = computed(() => {
+  const categories = refreshValues.value.map(item => `${item.group}-${item.pluginName}`);
+  return ['全部', ...Array.from(new Set(categories))];
+});
+const categoryResult = computed(() => {
+  if (selectedCategory.value === '全部') {
+    return searchResult.value;
+  }
+  return searchResult.value.filter(item => `${item.group}-${item.pluginName}` === selectedCategory.value);
+});
+const { totalPage, currentPage, currentPageChange, showValue } = usePagination(categoryResult);
+
+const toggleCategoryNav = () => {
+  showCategoryNav.value = !showCategoryNav.value;
+}
+
+const navItemClick = (item: string) => {
+  selectedCategory.value = item;
+}
 
 const { onRefresh } = useWindowStore();
 onRefresh(PagePath.BOOKSHELF, refresh);
@@ -132,7 +152,19 @@ const exportTxt = (e: MouseEvent, book: Book) => {
           <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
         </ElEmpty>
       </div>
-      <div class="result" v-else>
+      <div :class="['result', showCategoryNav ? 'category-nav-visible' : '']" v-else>
+        <nav id="bookstore-nav" v-show="showCategoryNav">
+          <main class="rc-scrollbar">
+            <ul>
+              <li :class="[
+                'rc-button',
+                item === selectedCategory ? 'nav-item-selected' : ''
+              ]" v-for="item of navItem" :key="item" @click="navItemClick(item)">
+                <Text ellipsis :title="item">{{ item }}</Text>
+              </li>
+            </ul>
+          </main>
+        </nav>
         <div :class="['toolbar', options.enableBlur ? 'app-blur' : '']">
           <div class="left">
             <ElCheckbox v-memo="[checkAll, isIndeterminate]" v-model="checkAll" label="全选"
@@ -141,6 +173,7 @@ const exportTxt = (e: MouseEvent, book: Book) => {
               :page-count="totalPage" :current-page="currentPage" @current-change="currentPageChange" />
           </div>
           <div class="right">
+            <ElButton type="primary" size="small" @click="toggleCategoryNav">分类</ElButton>
             <ElButton type="warning" size="small" :icon="IconImport" @click="openBookFile">导入</ElButton>
             <ElButton type="danger" size="small" :icon="IconDelete" @click="removeBookshelf">移出</ElButton>
             <ElInput v-memo="[searchKey]" v-model="searchKey"  placeholder="请输入书名、作者"
@@ -546,6 +579,53 @@ const exportTxt = (e: MouseEvent, book: Book) => {
   }
 
   .result {
+    position: relative;
+
+    nav {
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      left: 10px;
+      top: 50px;
+      padding: 10px 0 10px 10px;
+      width: 19rem;
+      height: calc(100vh - 115px);
+      background-color: var(--rc-window-box-bgcolor);
+      border-radius: 10px;
+      box-shadow: var(--rc-shadow-light);
+      overflow: hidden;
+      z-index: 2;
+
+      main {
+        padding-right: 10px;
+        width: calc(100% - 10px);
+        height: 100%;
+
+        ul li {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          justify-content: flex-start;
+          margin-bottom: 5px;
+          padding: 7px 10px;
+          border-radius: 8px;
+          font-size: 13px;
+
+          &:active {
+            transform: scale(0.98);
+          }
+
+          &:last-child {
+            margin-bottom: 0;
+          }
+
+          &:is(.nav-item-selected) {
+            background-color: var(--rc-button-hover-bgcolor);
+          }
+        }
+      }
+    }
+
     :deep(.el-checkbox) {
       .el-checkbox__inner {
         --el-checkbox-checked-bg-color: var(--rc-theme-color);
