@@ -42,6 +42,7 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
           searchIndex,
           readIndex,
           readChapterTitle,
+          disableRefresh,
           timestamp,
           pluginVersionCode,
           baseUrl
@@ -58,6 +59,7 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
           searchIndex,
           readIndex,
           readChapterTitle: readChapterTitle || '',
+          disableRefresh: !!disableRefresh,
           timestamp,
           pluginVersionCode,
           isRunningRefresh: false,
@@ -137,6 +139,17 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
     } as unknown as BookshelfStoreEntity);
     return true;
   }
+  async updateDisableRefresh(id: string, disableRefresh: boolean): Promise<boolean> {
+    const summary = await super.getById(id) as BookshelfStoreSummary | null;
+    if (isNull(summary)) {
+      return false;
+    }
+    await super.put({
+      ...summary,
+      disableRefresh
+    } as unknown as BookshelfStoreEntity);
+    return true;
+  }
   private getAllSummaries(): Promise<BookshelfStoreSummary[] | null> {
     return super.getAll() as Promise<BookshelfStoreSummary[] | null>;
   }
@@ -167,6 +180,7 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
       baseUrl: entity.baseUrl,
       readIndex: entity.readIndex,
       readScrollTop: entity.readScrollTop,
+      disableRefresh: !!entity.disableRefresh,
       searchIndex: entity.searchIndex,
       timestamp: entity.timestamp,
       bookname: entity.bookname,

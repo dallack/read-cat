@@ -26,6 +26,7 @@ import IconPlugin from '../../assets/svg/icon-settings-plugins.svg';
 import IconImport from '../../assets/svg/icon-import.svg';
 import IconDelete from '../../assets/svg/icon-delete.svg';
 import IconDownload from '../../assets/svg/icon-arrow-line-down.svg';
+import IconRedo from '../../assets/svg/icon-redo.svg';
 import { useSettingsStore } from '../../store/settings';
 import CoverImage from '../../assets/cover.jpg';
 import { Book, useBookshelfStore } from '../../store/bookshelf';
@@ -253,6 +254,11 @@ const exportTxt = (e: MouseEvent, book: Book) => {
   e.stopPropagation();
   bookshelf.exportTxt(book.id);
 }
+
+const toggleBookRefresh = (e: MouseEvent, book: Book) => {
+  e.stopPropagation();
+  bookshelf.setDisableRefresh(book.id, !book.disableRefresh);
+}
 </script>
 
 <template>
@@ -347,6 +353,9 @@ const exportTxt = (e: MouseEvent, book: Book) => {
                     </template>
                   </div>
                   <!-- 导出当前书籍为 TXT，文件保存到数据目录的 download 文件夹 -->
+                  <ElButton :class="['refresh-toggle', item.disableRefresh ? 'disabled-refresh' : '']" size="small"
+                    circle :icon="IconRedo" :title="item.disableRefresh ? '恢复自动更新' : '停止自动更新'"
+                    @click="e => toggleBookRefresh(e, item)" />
                   <ElButton class="export-txt" size="small" circle :icon="IconDownload"
                     :loading="item.isRunningExport"
                     :title="item.exportProgress ? `下载 ${item.exportProgress.current}/${item.exportProgress.total}` : '下载'"
@@ -1119,16 +1128,29 @@ const exportTxt = (e: MouseEvent, book: Book) => {
               align-items: center;
               flex: 1;
               min-width: 0;
-              max-width: calc(100% - 52px);
+              max-width: calc(100% - 78px);
             }
 
+            .refresh-toggle,
             .export-txt {
               flex: 0 0 20px;
-              margin-left: 6px;
-              margin-right: 6px;
               width: 20px;
               height: 20px;
               min-height: 20px;
+            }
+
+            .refresh-toggle {
+              margin-left: 6px;
+              color: var(--rc-theme-color);
+
+              &.disabled-refresh {
+                color: var(--rc-error-color);
+              }
+            }
+
+            .export-txt {
+              margin-left: 6px;
+              margin-right: 6px;
             }
           }
         }

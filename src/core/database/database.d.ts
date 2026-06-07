@@ -51,6 +51,7 @@ export type BookshelfStoreEntity = {
   baseUrl: string,
   readIndex: number,
   readScrollTop: number,
+  disableRefresh?: boolean,
   searchIndex: string,
   timestamp: number,
 } & DetailEntity;

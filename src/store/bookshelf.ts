@@ -25,6 +25,7 @@ export type Book = {
   readIndex: number,
   readChapterTitle: string,
   timestamp: number,
+  disableRefresh?: boolean,
   pluginVersionCode: number,
   baseUrl: string,
   group: string,
@@ -183,6 +184,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           latestChapterTitle,
           searchIndex,
           readIndex,
+          disableRefresh,
           timestamp,
           pluginVersionCode,
           baseUrl
@@ -208,6 +210,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           searchIndex,
           readIndex,
           readChapterTitle: chapterList[readIndex]?.title,
+          disableRefresh: !!disableRefresh,
           timestamp,
           pluginVersionCode,
           baseUrl,
@@ -220,6 +223,25 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           isRunningExport: false,
           error: void 0,
           ...obj
+        });
+      } catch (e: any) {
+        useMessage().error(e.message);
+        return errorHandler(e);
+      }
+    },
+    async setDisableRefresh(id: string, disableRefresh: boolean): Promise<void> {
+      try {
+        const entity = this._books.get(id);
+        if (!entity) {
+          return;
+        }
+        const updated = await GLOBAL_DB.store.bookshelfStore.updateDisableRefresh(id, disableRefresh);
+        if (!updated) {
+          return;
+        }
+        this._books.set(id, {
+          ...entity,
+          disableRefresh
         });
       } catch (e: any) {
         useMessage().error(e.message);
@@ -378,6 +400,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           pluginVersionCode: db.pluginVersionCode,
           readIndex: db.readIndex,
           readScrollTop: db.readScrollTop,
+          disableRefresh: db.disableRefresh,
           searchIndex: db.searchIndex,
           timestamp: db.timestamp,
           baseUrl: db.baseUrl,
@@ -399,7 +422,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
     },
     async refreshAll() {
       const { threadsNumber } = useSettingsStore();
-      const threads = chunkArray(Array.from(this._books.values()), threadsNumber);
+      const threads = chunkArray(Array.from(this._books.values()).filter(book => !book.disableRefresh), threadsNumber);
       for (const thread of threads) {
         const ps: Promise<void>[] = [];
         for (const book of thread) {
