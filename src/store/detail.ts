@@ -8,6 +8,7 @@ import { BookSource } from '../core/plugins/defined/booksource';
 import { newError } from '../core/utils';
 import { BookParser } from '../core/book/book-parser';
 import { nextTick } from 'vue';
+import { attachVolumeTitles } from '../core/book/chapter-title';
 
 export interface DetailPageResult extends DetailEntity {
   pid: string,
@@ -113,11 +114,12 @@ export const useDetailStore = defineStore('Detail', {
           coverImageUrl: detail.coverImageUrl.trim(),
           latestChapterTitle: detail.latestChapterTitle?.trim(),
           intro: detail.intro?.trim(),
-          chapterList: detail.chapterList.map((v, index) => {
+          chapterList: attachVolumeTitles(detail.chapterList).map((v, index) => {
             return {
               title: v.title.trim(),
               url: v.url.trim(),
-              index
+              index,
+              volume: v.volume
             };
           }),
           pid: plugin.props.ID,

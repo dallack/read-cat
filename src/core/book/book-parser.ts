@@ -6,7 +6,8 @@ import { isUndefined } from '../is';
 
 export type Chapter = {
   title: string,
-  contents: string[]
+  contents: string[],
+  volume?: string
 }
 
 type Options = {
@@ -37,7 +38,8 @@ export abstract class BookParser {
       return {
         title: c.title,
         index: i,
-        url: nanoid()
+        url: nanoid(),
+        volume: c.volume
       }
     });
     const detailPageUrl = nanoid();

@@ -3,7 +3,6 @@ import {
   ElResult,
   ElButton,
   ElCheckTag,
-  ElPagination,
   ElRow,
   ElCol,
   ElIcon,
@@ -49,10 +48,7 @@ const { isRunningGetDetailPage, detailResult, error, cacheIndexs } = storeToRefs
 const { exist, putAndRemoveBookshelf, setExist } = useBookshelf(String(pid), String(detailUrl), detailResult);
 const { getChapterContent } = useTextContent(detailResult, String(detailUrl), exist);
 const {
-  totalPage,
-  currentPage,
   showValue,
-  currentPageChange,
   currentReadIndex
 } = useChapterPagination(detailResult);
 
@@ -160,12 +156,16 @@ const bookmarkWindow = ref<WindowEvent>();
         <div class="chapter">
           <div class="col">
             <p v-once>章节目录</p>
-            <ElPagination v-memo="[totalPage, currentPage]" layout="prev, pager, next" :page-count="totalPage" :current-page="currentPage"
-              @current-change="currentPageChange" size="small" hide-on-single-page />
           </div>
           <div :class="['list', 'rc-scrollbar', options.enableTransition ? 'rc-scrollbar-behavior' : '']">
-            <ElRow v-for="(item, index) in showValue" :key="index">
-              <ElCol class="rc-button" :span="8" v-for="i in item" :key="i.url" @click="getChapterContent(i)">
+            <template v-for="item in showValue" :key="item.key">
+              <ElRow v-if="item.type === 'volume'" class="volume-title">
+                <ElCol :span="24">
+                  <Text :title="item.title" ellipsis max-width="100%">{{ item.title }}</Text>
+                </ElCol>
+              </ElRow>
+              <ElRow v-else>
+              <ElCol class="rc-button" :span="8" v-for="i in item.chapters" :key="i.url" @click="getChapterContent(i)">
                 <ElIcon v-if="cacheIndexs[<string>detailUrl].includes(i.index)"  title="已缓存">
                   <IconCache />
                 </ElIcon>
@@ -173,7 +173,8 @@ const bookmarkWindow = ref<WindowEvent>();
                   color: `${currentReadIndex === i.index ? 'var(--rc-theme-color)' : ''}`
                 }">{{ i.title }}</Text>
               </ElCol>
-            </ElRow>
+              </ElRow>
+            </template>
           </div>
         </div>
       </div>
@@ -343,12 +344,6 @@ const bookmarkWindow = ref<WindowEvent>();
             font-size: 12px;
           }
 
-          :deep(.el-pagination) {
-            --el-pagination-bg-color: none;
-            --el-pagination-button-disabled-bg-color: none;
-            --el-pagination-hover-color: var(--rc-theme-color);
-            margin-right: 5px;
-          }
         }
 
         .list {
@@ -360,6 +355,22 @@ const bookmarkWindow = ref<WindowEvent>();
             margin-bottom: 5px;
             margin-right: 10px;
             contain: layout;
+
+            &.volume-title {
+              .el-col {
+                align-items: center;
+                justify-content: center;
+                cursor: default;
+                opacity: 0.75;
+                font-weight: bold;
+                background-color: rgba(127, 127, 127, 0.08);
+
+                &:active {
+                  transform: none;
+                }
+              }
+            }
+
             .el-col {
               display: flex;
               padding: 0 10px;

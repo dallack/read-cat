@@ -13,7 +13,8 @@ export interface SearchEntity {
 export type Chapter = {
   title: string,
   url: string,
-  index: number
+  index: number,
+  volume?: string
 }
 export type DetailEntity = {
   bookname: string,

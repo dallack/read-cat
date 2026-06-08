@@ -728,13 +728,54 @@ export class JsonFileDatabase {
   private async writeJsonAtomic(filePath: string, data: unknown) {
     await fsp.mkdir(path.dirname(filePath), { recursive: true });
     const tempPath = `${filePath}.${Date.now()}.${randomUUID()}.tmp`;
+    const backupPath = `${filePath}.${Date.now()}.${randomUUID()}.bak`;
     try {
       await this.writeJson(tempPath, data);
-      await fsp.rename(tempPath, filePath);
+      await this.replaceFile(tempPath, filePath, backupPath);
     } catch (e) {
       await fsp.rm(tempPath, { force: true }).catch(() => void 0);
+      await fsp.rm(backupPath, { force: true }).catch(() => void 0);
       throw e;
     }
+  }
+
+  private async replaceFile(sourcePath: string, targetPath: string, backupPath: string) {
+    const hasTarget = await fsp.access(targetPath).then(() => true, () => false);
+    if (!hasTarget) {
+      await this.retryFileOperation(() => fsp.rename(sourcePath, targetPath));
+      return;
+    }
+
+    await this.retryFileOperation(() => fsp.rename(targetPath, backupPath));
+    try {
+      await this.retryFileOperation(() => fsp.rename(sourcePath, targetPath));
+      await fsp.rm(backupPath, { force: true }).catch(() => void 0);
+    } catch (e) {
+      await fsp.rm(targetPath, { force: true }).catch(() => void 0);
+      await fsp.rename(backupPath, targetPath).catch(() => void 0);
+      throw e;
+    }
+  }
+
+  private async retryFileOperation(operation: () => Promise<void>) {
+    let lastError: unknown;
+    for (let i = 0; i < 5; i++) {
+      try {
+        await operation();
+        return;
+      } catch (e: any) {
+        lastError = e;
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(e?.code)) {
+          throw e;
+        }
+        await this.delay(50 * (i + 1));
+      }
+    }
+    throw lastError;
+  }
+
+  private delay(ms: number) {
+    return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
   private async writeJson(filePath: string, data: unknown) {
@@ -748,7 +789,7 @@ export class JsonFileDatabase {
       const filePath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await this.cleanupTempFiles(filePath);
-      } else if (entry.name.endsWith('.tmp')) {
+      } else if (entry.name.endsWith('.tmp') || entry.name.endsWith('.bak')) {
         await fsp.rm(filePath, { force: true }).catch(() => void 0);
       }
     }

@@ -6,10 +6,9 @@ import {
   ElRadioGroup,
   ElRadioButton,
   ElMain,
-  ElIcon,
-  ElPagination
+  ElIcon
 } from 'element-plus';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { usePagination } from './hooks/pagination';
 import { Chapter } from '../../../../core/book/book';
 import { useTextContentStore } from '../../../../store/text-content';
@@ -45,14 +44,37 @@ const { exist, getBookshelfEntity, put } = useBookshelfStore();
 const { cache } = useCacheChapter();
 const {
   pid,
-  totalPage,
-  currentPage,
   showValue,
-  currentPageChange,
   currentChapterTitle,
   currentChapterPage
-} = usePagination(13);
+} = usePagination();
 const { scrollToTextContent } = useScrollTopStore();
+const directoryValue = computed(() => {
+  const result: (
+    { type: 'volume', title: string, index: number, key: string } |
+    { type: 'chapter', title: string, index: number, chapter: Chapter, key: string }
+  )[] = [];
+  for (let i = 0; i < showValue.value.length; i++) {
+    const item = showValue.value[i];
+    const prevVolume = i > 0 ? showValue.value[i - 1]?.volume || '' : '';
+    if (item.volume && (i === 0 || item.volume !== prevVolume)) {
+      result.push({
+        type: 'volume',
+        title: item.volume,
+        index: -1,
+        key: `volume-${item.index}-${item.volume}`
+      });
+    }
+    result.push({
+      type: 'chapter',
+      title: item.title,
+      index: item.index,
+      chapter: item,
+      key: item.url
+    });
+  }
+  return result;
+});
 const directoryItemClick = (chapter: Chapter) => {
   if (currentChapterTitle.value === chapter.title) {
     return;
@@ -111,8 +133,9 @@ export default {
     <ElMain class="chapter-box-main">
       <div v-show="radioValue === 'directory'" class="directory">
         <template v-if="currentDetailUrl">
-          <ul>
-            <li v-for="item in showValue" :key="item.url" class="rc-button" @click="directoryItemClick(item)">
+          <ul :class="['rc-scrollbar', options.enableTransition ? 'rc-scrollbar-behavior' : '']">
+            <li v-for="item in directoryValue" :key="item.key" :class="item.type === 'volume' ? 'volume-title' : 'rc-button'"
+              @click="item.type === 'chapter' && directoryItemClick(item.chapter)">
               <ElIcon v-if="cacheIndexs[currentDetailUrl].includes(item.index)" title="已缓存">
                 <IconCache />
               </ElIcon>
@@ -122,8 +145,6 @@ export default {
               }">{{ item.title }}</Text>
             </li>
           </ul>
-          <ElPagination layout="prev, pager, next" :current-page="currentPage" :page-count="totalPage"
-            @current-change="currentPageChange" hide-on-single-page />
         </template>
       </div>
       <div v-show="radioValue === 'bookmark'"
@@ -174,7 +195,8 @@ export default {
       position: relative;
 
       ul {
-        height: 39rem;
+        height: 42.5rem;
+        overflow-y: auto;
 
         li {
           margin: 0 2rem .5rem;
@@ -198,18 +220,20 @@ export default {
           :deep(.el-icon) {
             margin-right: .5rem;
           }
-        }
-      }
 
-      :deep(.el-pagination) {
-        display: flex;
-        justify-content: center;
-        margin-top: 1rem;
-        --el-pagination-hover-color: var(--rc-theme-color);
+          &.volume-title {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: default;
+            opacity: 0.75;
+            font-weight: bold;
+            background-color: rgba(127, 127, 127, 0.08);
 
-        button,
-        .el-pager li {
-          background-color: transparent;
+            &:active {
+              transform: none;
+            }
+          }
         }
       }
 

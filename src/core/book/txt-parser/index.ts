@@ -6,6 +6,7 @@ import RegExpExecWorker from './worker/regexp-exec?worker';
 import { newError } from '../../utils';
 import { decode } from '../../../worker';
 import { useSettingsStore } from '../../../store/settings';
+import { attachVolumeTitlesByTitleList, filterVolumeTitles } from '../chapter-title';
 
 export enum TxtParserType {
   BOOK_NAME,
@@ -137,7 +138,7 @@ export class TxtParser extends BookParser {
       }
     });
   }
-  public getChapterTitleList(): Promise<string[]> {
+  private getMatchedChapterTitleList(): Promise<string[]> {
     return new Promise<string[]>((reso, reje) => {
       try {
         if (!this.rule.chapterList) {
@@ -155,7 +156,8 @@ export class TxtParser extends BookParser {
         worker.onmessage = e => {
           const { result, error } = e.data;
           worker.terminate();
-          return error ? reje(newError(error)) : reso(result);
+          const titles = Array.isArray(result) ? result : [];
+          return error ? reje(newError(error)) : reso(titles);
         }
         worker.onerror = e => {
           worker.terminate();
@@ -166,12 +168,19 @@ export class TxtParser extends BookParser {
       }
     });
   }
+  public async getChapterTitleList(): Promise<string[]> {
+    const titles = await this.getMatchedChapterTitleList();
+    return titles[0] === LINE_SPLIT_RULE.id ? titles : filterVolumeTitles(titles.map(title => ({ title }))).map(item => item.title);
+  }
   public getChapterList() {
     return new Promise<Chapter[]>(async (reso, reje) => {
       try {
         const { txtParse } = useSettingsStore();
         const worker = new ParseChapterContentWorker();
-        const chapterList = await this.getChapterTitleList();
+        const matchedChapterList = await this.getMatchedChapterTitleList();
+        const chapterList = matchedChapterList[0] === LINE_SPLIT_RULE.id ?
+          matchedChapterList :
+          filterVolumeTitles(matchedChapterList.map(title => ({ title }))).map(item => item.title);
         worker.postMessage({
           content: this.content,
           maxLines: txtParse.maxLines,
@@ -180,7 +189,8 @@ export class TxtParser extends BookParser {
         worker.onmessage = e => {
           const { result, error } = e.data;
           worker.terminate();
-          return error ? reje(newError(error)) : reso(result);
+          const chapters = Array.isArray(result) ? result : [];
+          return error ? reje(newError(error)) : reso(chapterList[0] === LINE_SPLIT_RULE.id ? chapters : attachVolumeTitlesByTitleList(chapters, matchedChapterList));
         }
         worker.onerror = e => {
           worker.terminate();

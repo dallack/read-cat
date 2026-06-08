@@ -12,6 +12,7 @@ import { Core } from '../core';
 import fs from 'fs/promises';
 import { join } from 'path';
 import { nanoid } from 'nanoid';
+import { attachVolumeTitles } from '../core/book/chapter-title';
 
 export type Book = {
   id: string,
@@ -294,6 +295,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
         const chapterGroups = chunkArray(book.chapterList, threadsNumber);
         let errorCount = 0;
         let exportedCount = 0;
+        let exportedVolume = '';
         entity.exportProgress = {
           current: 0,
           total: book.chapterList.length
@@ -310,6 +312,10 @@ export const useBookshelfStore = defineStore('Bookshelf', {
               errorCount++;
               GLOBAL_LOG.error('Bookshelf exportTxt chapter', `bookId:${id}`, chapter, result.reason);
             } else {
+              if (chapter.volume && chapter.volume !== exportedVolume) {
+                exportedVolume = chapter.volume;
+                await file.handle.writeFile(`${chapter.volume}\n\n`, { encoding: 'utf-8' });
+              }
               await file.handle.writeFile(`${result.value.lines.join('\n')}\n`, { encoding: 'utf-8' });
             }
             exportedCount++;
@@ -408,7 +414,7 @@ export const useBookshelfStore = defineStore('Bookshelf', {
           author: author.trim() || db.author,
           intro: intro?.trim() || db.intro,
           coverImageUrl: coverImageUrl.trim() || db.coverImageUrl,
-          chapterList: chapterList || db.chapterList,
+          chapterList: chapterList ? attachVolumeTitles(chapterList) : db.chapterList,
           latestChapterTitle: latestChapterTitle?.trim() || db.latestChapterTitle
         });
       } catch (e: any) {

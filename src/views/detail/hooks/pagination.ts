@@ -1,41 +1,56 @@
 import { Ref, nextTick, ref, toRaw, watch } from 'vue';
 import { Chapter } from '../../../core/book/book';
 import { DetailPageResult, useDetailStore } from '../../../store/detail';
-import { chunkArray } from '../../../core/utils';
 import { storeToRefs } from 'pinia';
 
-export const useChapterPagination = (result: Ref<DetailPageResult | null>, pageSize = 60) => {
+export type ChapterDirectoryRow =
+  | { type: 'volume', title: string, key: string }
+  | { type: 'chapters', chapters: Chapter[], key: string };
+
+export const useChapterPagination = (result: Ref<DetailPageResult | null>) => {
   const detailStore = storeToRefs(useDetailStore());
-  const pageValue = ref<Chapter[][][]>([]);
-  const totalPage = ref<number>(0);
-  const { currentPage, currentReadIndex } = detailStore;
-  const showValue = ref<Chapter[][]>([]);
-  const getPage = () => {
-    let page = currentPage.value - 1;
-    page = page < 0 ? 0 : page;
-    page = page >= totalPage.value ? totalPage.value - 1 : page;
-    currentPage.value = page + 1;
-    return page;
-  }
-  const currentPageChange = (page: number) => {
-    currentPage.value = page;
-    showValue.value = pageValue.value[getPage()];
-    nextTick(() => {
-      const ele = document.querySelector<HTMLElement>('#detail-result-box .chapter .list');
-      if (ele) {
-        ele.scrollTop = 0;
+  const { currentReadIndex } = detailStore;
+  const showValue = ref<ChapterDirectoryRow[]>([]);
+  const createRows = (chapterList: Chapter[]) => {
+    const rows: ChapterDirectoryRow[] = [];
+    let currentVolume = '';
+    let chapters: Chapter[] = [];
+    const flushChapters = () => {
+      if (chapters.length < 1) {
+        return;
       }
-    });
+      rows.push({
+        type: 'chapters',
+        chapters,
+        key: `chapters-${chapters[0].index}`
+      });
+      chapters = [];
+    };
+    for (const chapter of chapterList) {
+      if (chapter.volume && chapter.volume !== currentVolume) {
+        flushChapters();
+        currentVolume = chapter.volume;
+        rows.push({
+          type: 'volume',
+          title: chapter.volume,
+          key: `volume-${chapter.index}-${chapter.volume}`
+        });
+      }
+      chapters.push(chapter);
+      if (chapters.length >= 3) {
+        flushChapters();
+      }
+    }
+    flushChapters();
+    return rows;
   }
   watch(() => result.value, (newVal, _) => {
     if (!newVal) {
-      pageValue.value = [];
-      totalPage.value = 0;
       showValue.value = [];
       return;
     }
-    currentPage.value = Math.ceil((currentReadIndex.value + 1) / pageSize);
-    
+    const { chapterList } = toRaw(newVal);
+    showValue.value = createRows(chapterList);
     if (currentReadIndex.value >= 0) {
       nextTick(() => {
         const list = document.querySelector<HTMLDivElement>('#detail-result-box .chapter .list');
@@ -52,20 +67,12 @@ export const useChapterPagination = (result: Ref<DetailPageResult | null>, pageS
         }
       });
     }
-    const { chapterList } = toRaw(newVal);
-    const rows = chunkArray(chapterList, 3);
-    pageValue.value = chunkArray(rows, pageSize / 3);
-    totalPage.value = pageValue.value.length;
-    showValue.value = pageValue.value[getPage()];
   }, {
     immediate: true,
     deep: true
   });
   return {
-    totalPage,
-    currentPage,
     showValue,
-    currentPageChange,
     currentReadIndex
   }
 }

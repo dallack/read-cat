@@ -211,6 +211,7 @@ export class BookshelfStoreDatabase extends BaseStoreDatabase<BookshelfStoreEnti
       chapterList: entity.chapterList.map(chapter => ({
         index: chapter.index,
         title: chapter.title,
+        volume: chapter.volume,
         url: chapter.url
       }))
     });
