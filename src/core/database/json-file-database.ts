@@ -154,6 +154,15 @@ export class JsonFileDatabase {
   }
 
   async queryOne<T>(storeName: string, predicate: (val: T) => boolean): Promise<T | null> {
+    if (storeName !== this.textContentStoreName) {
+      for (const record of this.getStore(storeName).values()) {
+        const value = cloneByJSON(record) as T;
+        if (predicate(value)) {
+          return value;
+        }
+      }
+      return null;
+    }
     const all = await this.query(storeName, predicate);
     return all[0] || null;
   }
@@ -667,13 +676,19 @@ export class JsonFileDatabase {
       bookByPidDetailUrl: this.index.bookByPidDetailUrl
     };
     this.index = data;
-    await this.enqueue(this.indexPath, () => this.writeJson(this.indexPath, data));
+    await this.enqueue(this.indexPath, () => this.writeJsonAtomic(this.indexPath, data));
   }
 
   private enqueue<T>(filePath: string, task: () => Promise<T>) {
     const prev = this.writeQueues.get(filePath) || Promise.resolve();
     const next = prev.catch(() => void 0).then(task);
-    this.writeQueues.set(filePath, next.then(() => void 0, () => void 0));
+    const marker = next.then(() => void 0, () => void 0);
+    this.writeQueues.set(filePath, marker);
+    marker.finally(() => {
+      if (this.writeQueues.get(filePath) === marker) {
+        this.writeQueues.delete(filePath);
+      }
+    });
     return next;
   }
 
@@ -715,7 +730,6 @@ export class JsonFileDatabase {
     const tempPath = `${filePath}.${Date.now()}.${randomUUID()}.tmp`;
     try {
       await this.writeJson(tempPath, data);
-      await fsp.rm(filePath, { force: true }).catch(() => void 0);
       await fsp.rename(tempPath, filePath);
     } catch (e) {
       await fsp.rm(tempPath, { force: true }).catch(() => void 0);
