@@ -99,7 +99,8 @@ export const useSettingsStore = defineStore('Settings', {
       },
       bookShelf: {
         categories: [],
-        bookCategories: {}
+        bookCategories: {},
+        defaultCategory: ''
       }
     }
   },

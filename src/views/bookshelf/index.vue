@@ -55,8 +55,12 @@ onMounted(() => {
 const { refresh, refreshValues } = useRefresh();
 const { searchKey, searchResult } = useDefaultSearch(refreshValues);
 const CATEGORY_ALL = '\u5168\u90e8';
+const getInitialCategory = () => {
+  const defaultCategory = settings.bookShelf.defaultCategory;
+  return defaultCategory && settings.bookShelf.categories.includes(defaultCategory) ? defaultCategory : CATEGORY_ALL;
+}
 const showCategoryNav = ref(false);
-const selectedCategory = ref(CATEGORY_ALL);
+const selectedCategory = ref(getInitialCategory());
 const categoryManagerWindow = ref<WindowEvent>();
 const newCategoryName = ref('');
 const activeManageCategory = ref('');
@@ -126,6 +130,9 @@ const saveEditCategory = () => {
   if (selectedCategory.value === oldName) {
     selectedCategory.value = newName;
   }
+  if (settings.bookShelf.defaultCategory === oldName) {
+    settings.bookShelf.defaultCategory = newName;
+  }
   if (activeManageCategory.value === oldName) {
     activeManageCategory.value = newName;
   }
@@ -147,7 +154,14 @@ const removeCategory = (category: string) => {
   if (selectedCategory.value === category) {
     selectedCategory.value = CATEGORY_ALL;
   }
+  if (settings.bookShelf.defaultCategory === category) {
+    settings.bookShelf.defaultCategory = '';
+  }
   activeManageCategory.value = settings.bookShelf.categories[Math.min(index, settings.bookShelf.categories.length - 1)] || '';
+}
+
+const toggleDefaultCategory = (category: string) => {
+  settings.bookShelf.defaultCategory = settings.bookShelf.defaultCategory === category ? '' : category;
 }
 
 const moveCategory = (category: string, step: -1 | 1) => {
@@ -183,6 +197,9 @@ watch(() => settings.bookShelf.categories, categories => {
   }
   if (activeManageCategory.value && !categories.includes(activeManageCategory.value)) {
     activeManageCategory.value = categories[0] || '';
+  }
+  if (settings.bookShelf.defaultCategory && !categories.includes(settings.bookShelf.defaultCategory)) {
+    settings.bookShelf.defaultCategory = '';
   }
 }, { deep: true });
 
@@ -492,12 +509,16 @@ const toggleBookRefresh = (e: MouseEvent, book: Book) => {
                     <ElButton size="small" :disabled="index === 0" @click.stop="moveCategory(category, -1)">上移</ElButton>
                     <ElButton size="small" :disabled="index === settings.bookShelf.categories.length - 1"
                       @click.stop="moveCategory(category, 1)">下移</ElButton>
+                    <ElButton size="small" :type="settings.bookShelf.defaultCategory === category ? 'success' : 'default'"
+                      @click.stop="toggleDefaultCategory(category)">
+                      {{ settings.bookShelf.defaultCategory === category ? '取消默认' : '设默认' }}
+                    </ElButton>
                     <ElButton size="small" @click.stop="startEditCategory(category)">修改</ElButton>
                     <ElButton size="small" type="danger" @click.stop="removeCategory(category)">删除</ElButton>
                   </div>
                 </template>
               </li>
-            </ul>
+              </ul>
           </aside>
           <section>
             <div class="book-assign-title">

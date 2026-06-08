@@ -137,6 +137,7 @@ export type BookStoreConfig = {
 export type BookShelfConfig = {
   categories: string[]
   bookCategories: Record<string, string>
+  defaultCategory?: string
 }
 export type Settings = {
   /**设置配置ID */
