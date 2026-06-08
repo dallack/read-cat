@@ -509,10 +509,12 @@ const toggleBookRefresh = (e: MouseEvent, book: Book) => {
                     <ElButton size="small" :disabled="index === 0" @click.stop="moveCategory(category, -1)">上移</ElButton>
                     <ElButton size="small" :disabled="index === settings.bookShelf.categories.length - 1"
                       @click.stop="moveCategory(category, 1)">下移</ElButton>
-                    <ElButton size="small" :type="settings.bookShelf.defaultCategory === category ? 'success' : 'default'"
-                      @click.stop="toggleDefaultCategory(category)">
-                      {{ settings.bookShelf.defaultCategory === category ? '取消默认' : '设默认' }}
-                    </ElButton>
+                    <ElButton
+                      :class="['default-category-toggle', settings.bookShelf.defaultCategory === category ? 'is-default' : '']"
+                      size="small" circle :icon="IconRedo"
+                      :title="settings.bookShelf.defaultCategory === category ? '取消默认' : '设置默认'"
+                      @click.stop="toggleDefaultCategory(category)"
+                    />
                     <ElButton size="small" @click.stop="startEditCategory(category)">修改</ElButton>
                     <ElButton size="small" type="danger" @click.stop="removeCategory(category)">删除</ElButton>
                   </div>
@@ -852,6 +854,14 @@ const toggleBookRefresh = (e: MouseEvent, book: Book) => {
 
       .el-button {
         margin-left: 0;
+      }
+
+      .default-category-toggle {
+        color: var(--rc-theme-color);
+
+        &.is-default {
+          color: var(--rc-error-color);
+        }
       }
     }
 
